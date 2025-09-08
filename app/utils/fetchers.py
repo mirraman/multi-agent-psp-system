@@ -179,3 +179,55 @@ def fetch_alphafold(accession: str) -> Dict[str, Any]:
     return result
 
 
+def fetch_pubmed(query: str, api_key: Optional[str] = None, retmax: int = 10) -> Dict[str, Any]:
+    base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    esearch_url = (
+        f"{base}/esearch.fcgi?db=pubmed&retmode=json&retmax={retmax}&term={requests.utils.quote(query)}"
+        + (f"&api_key={api_key}" if api_key else "")
+    )
+    try:
+        esearch = _get_json(esearch_url)
+    except HttpError as exc:  
+        msg = str(exc)
+        if api_key and exc.status_code == 400 and ("API key invalid" in msg or "api key invalid" in msg.lower()):
+            esearch_url = f"{base}/esearch.fcgi?db=pubmed&retmode=json&retmax={retmax}&term={requests.utils.quote(query)}"
+            esearch = _get_json(esearch_url)
+        else:
+            raise
+    esr = esearch.get("esearchresult", {})
+    id_list: List[str] = esr.get("idlist", [])
+    count: int = int(esr.get("count", 0))
+
+    articles: List[Dict[str, Any]] = []
+    if id_list:
+        ids = ",".join(id_list)
+        esummary_url = (
+            f"{base}/esummary.fcgi?db=pubmed&retmode=json&id={ids}"
+            + (f"&api_key={api_key}" if api_key else "")
+        )
+        try:
+            summary = _get_json(esummary_url)
+        except HttpError as exc:
+            msg = str(exc)
+            if api_key and exc.status_code == 400 and ("API key invalid" in msg or "api key invalid" in msg.lower()):
+                esummary_url = f"{base}/esummary.fcgi?db=pubmed&retmode=json&id={ids}"
+                summary = _get_json(esummary_url)
+            else:
+                raise
+        res = summary.get("result", {})
+        for uid in res.get("uids", []):
+            item = res.get(uid) or {}
+            if not item:
+                continue
+            articles.append(
+                {
+                    "uid": uid,
+                    "title": item.get("title"),
+                    "pubdate": item.get("pubdate"),
+                    "journal": item.get("fulljournalname") or item.get("source"),
+                    "authors": [a.get("name") for a in item.get("authors", []) if a.get("name")],
+                }
+            )
+
+    return {"count": count, "ids": id_list, "articles": articles}
+

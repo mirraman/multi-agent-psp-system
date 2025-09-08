@@ -67,3 +67,13 @@ async def update_task(task_id: Any, fields: Dict[str, Any]) -> None:
     await MongoConnection.db.tasks.update_one({"_id": task_id}, {"$set": fields})
 
 
+async def upsert_aggregate(accession: str, aggregate: Dict[str, Any]) -> None:
+    if not MongoConnection.db:
+        raise RuntimeError("Mongo not initialized")
+    await MongoConnection.db.aggregates.update_one(
+        {"accession": accession},
+        {"$set": {"accession": accession, "data": aggregate}},
+        upsert=True,
+    )
+
+

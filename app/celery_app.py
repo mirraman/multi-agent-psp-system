@@ -14,7 +14,6 @@ celery_app = Celery(
     backend=REDIS_URL,
 )
 
-# Reasonable defaults
 celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
@@ -23,14 +22,12 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-# Ensure tasks are discovered/imported
 celery_app.conf.update(
     imports=("app.tasks",),
 )
 
-# Also try autodiscovery for good measure (package: app)
 try:
-    celery_app.autodiscover_tasks(["app"])  # no-op if not applicable
+    celery_app.autodiscover_tasks(["app"])
 except Exception:
     pass
 
