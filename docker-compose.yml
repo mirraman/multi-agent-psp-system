@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7
+    container_name: psp-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+
