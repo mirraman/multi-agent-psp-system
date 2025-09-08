@@ -2,7 +2,42 @@ import argparse
 import json
 from typing import Any, Dict
 
+import os
+from fastapi import FastAPI
+from fastapi import BackgroundTasks
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_alphafold
+
+
+app = FastAPI()
+
+
+@app.get("/health")
+def health_check() -> Dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    mongo_uri = os.getenv("MONGODB_URI")
+    if mongo_uri:
+        try:
+            from app.utils.db import MongoConnection
+
+            await MongoConnection.init(mongo_uri)
+        except Exception as exc:
+            print(f"Mongo init skipped/failed: {exc}")
+
+
+@app.on_event("shutdown")
+async def _on_shutdown() -> None:
+    try:
+        from app.utils.db import MongoConnection
+
+        await MongoConnection.close()
+    except Exception:
+        pass
 
 
 def main() -> None:

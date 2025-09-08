@@ -5,12 +5,11 @@ import requests
 
 
 class HttpError(Exception):
-    """Represents an HTTP error with helpful context."""
 
     def __init__(self, url: str, status_code: int, body: Optional[str] = None) -> None:
         message = f"HTTP {status_code} for {url}"
         if body:
-            message = f"{message}: {body[:200]}"  # limit to avoid giant messages
+            message = f"{message}: {body[:200]}" 
         super().__init__(message)
         self.url = url
         self.status_code = status_code
@@ -18,10 +17,7 @@ class HttpError(Exception):
 
 
 def _get_json(url: str) -> Any:
-    """GET a URL and return parsed JSON or raise HttpError.
 
-    Uses a short timeout and raises for non-200 responses with trimmed body.
-    """
     try:
         response = requests.get(url, timeout=20)
     except requests.RequestException as exc:
@@ -38,13 +34,11 @@ def _get_json(url: str) -> Any:
     try:
         return response.json()
     except ValueError as exc:
-        # fall back to text snippet to aid debugging
         preview = response.text[:200] if hasattr(response, "text") else ""
         raise RuntimeError(f"Failed to parse JSON from {url}: {preview}") from exc
 
 
 def _get_text(url: str) -> str:
-    """GET a URL and return response text or raise HttpError."""
     try:
         response = requests.get(url, timeout=30)
     except requests.RequestException as exc:
@@ -62,20 +56,14 @@ def _get_text(url: str) -> str:
 
 
 def _plddt_from_pdb_text(pdb_text: str) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-    """Parse pLDDT values from PDB B-factor field.
-
-    Prefer CA atoms for residue-level pLDDT. If none found, fall back to all atoms.
-    Returns (mean, min, max) or (None, None, None) if not found.
-    """
+   
     ca_values: List[float] = []
     all_values: List[float] = []
 
     for line in pdb_text.splitlines():
         if not line.startswith("ATOM") and not line.startswith("HETATM"):
             continue
-        # Atom name is columns 13-16 (1-based). Python slice [12:16].
         atom_name = line[12:16].strip() if len(line) >= 16 else ""
-        # B-factor is columns 61-66 (1-based). Python slice [60:66].
         try:
             bfactor_str = line[60:66].strip()
             if not bfactor_str:
@@ -97,11 +85,6 @@ def _plddt_from_pdb_text(pdb_text: str) -> Tuple[Optional[float], Optional[float
 
 
 def fetch_uniprot(accession: str) -> Dict[str, Any]:
-    """Fetch protein details from UniProt.
-
-    Returns a dictionary with: sequence, name, pdb_ids, alphafold_links.
-    Docs: https://rest.uniprot.org/
-    """
     url = f"https://rest.uniprot.org/uniprotkb/{accession}.json"
     data = _get_json(url)
 
@@ -109,14 +92,12 @@ def fetch_uniprot(accession: str) -> Dict[str, Any]:
         (data.get("sequence") or {}).get("value") or ""
     )
 
-    # Recommended protein name when available
     name: str = ""
     protein_desc = data.get("proteinDescription") or {}
     rec_name = (protein_desc.get("recommendedName") or {}).get("fullName") or {}
     if isinstance(rec_name, dict):
         name = rec_name.get("value") or ""
 
-    # External references
     db_refs: List[Dict[str, Any]] = data.get("dbReferences") or []
     pdb_ids: List[str] = [ref.get("id") for ref in db_refs if ref.get("type") == "PDB" and ref.get("id")]
     alphafold_links: List[str] = [ref.get("id") for ref in db_refs if ref.get("type") == "AlphaFoldDB" and ref.get("id")]
@@ -130,11 +111,6 @@ def fetch_uniprot(accession: str) -> Dict[str, Any]:
 
 
 def fetch_pdb(pdb_id: str) -> Dict[str, Any]:
-    """Fetch PDB entry metadata and a canonical PDB download URL.
-
-    Returns a dictionary with: metadata, download_url
-    Docs: https://data.rcsb.org/#data-access
-    """
     url = f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}"
     data = _get_json(url)
 
@@ -161,11 +137,6 @@ def fetch_pdb(pdb_id: str) -> Dict[str, Any]:
 
 
 def fetch_alphafold(accession: str) -> Dict[str, Any]:
-    """Fetch AlphaFold predicted structure info for a UniProt accession.
-
-    Returns a dictionary with: pdb_url, confidence_metrics
-    Docs: https://alphafold.ebi.ac.uk/help
-    """
     url = f"https://www.alphafold.ebi.ac.uk/api/prediction/{accession}"
     data = _get_json(url)
 
@@ -180,7 +151,6 @@ def fetch_alphafold(accession: str) -> Dict[str, Any]:
 
     confidence_metrics = entry.get("plddt") or entry.get("confidence")
 
-    # If pLDDT is not provided, compute summary statistics from the PDB B-factors
     plddt_mean: Optional[float] = None
     plddt_min: Optional[float] = None
     plddt_max: Optional[float] = None
@@ -189,7 +159,6 @@ def fetch_alphafold(accession: str) -> Dict[str, Any]:
             pdb_text = _get_text(pdb_url)
             plddt_mean, plddt_min, plddt_max = _plddt_from_pdb_text(pdb_text)
         except Exception:
-            # Non-fatal; keep confidence fields as None
             pass
 
     result: Dict[str, Any] = {
