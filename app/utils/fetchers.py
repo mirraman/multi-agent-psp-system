@@ -1,5 +1,6 @@
 import json
 from typing import Any, Dict, List, Optional, Tuple
+import time
 
 import requests
 
@@ -18,10 +19,16 @@ class HttpError(Exception):
 
 def _get_json(url: str) -> Any:
 
-    try:
-        response = requests.get(url, timeout=20)
-    except requests.RequestException as exc:
-        raise RuntimeError(f"Request failed for {url}: {exc}") from exc
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            response = requests.get(url, timeout=20)
+            break
+        except requests.RequestException as exc:
+            last_exc = exc
+            time.sleep(0.5 * (2 ** attempt))
+    else:
+        raise RuntimeError(f"Request failed for {url}: {last_exc}") from last_exc
 
     if response.status_code != 200:
         body_text = None
@@ -39,10 +46,16 @@ def _get_json(url: str) -> Any:
 
 
 def _get_text(url: str) -> str:
-    try:
-        response = requests.get(url, timeout=30)
-    except requests.RequestException as exc:
-        raise RuntimeError(f"Request failed for {url}: {exc}") from exc
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            response = requests.get(url, timeout=30)
+            break
+        except requests.RequestException as exc:
+            last_exc = exc
+            time.sleep(0.5 * (2 ** attempt))
+    else:
+        raise RuntimeError(f"Request failed for {url}: {last_exc}") from last_exc
 
     if response.status_code != 200:
         body_text = None

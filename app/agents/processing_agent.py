@@ -33,9 +33,24 @@ class ProcessingAgent:
             if frac_vhigh is not None:
                 results["fraction_very_high"] = frac_vhigh
 
-        # --- Optional: PDB metrics (MVP: count only) ---
+        # --- Optional: PDB metrics ---
         pdb_list = data.get("pdb") or []
         results["pdb_count"] = len(pdb_list)
+        if pdb_list:
+            # Simple derived metrics: count by experimental_method and best resolution
+            method_counts: Dict[str, int] = {}
+            best_resolution = None
+            for entry in pdb_list:
+                meta = (entry or {}).get("metadata") or {}
+                method = meta.get("experimental_method") or "UNKNOWN"
+                method_counts[method] = method_counts.get(method, 0) + 1
+                res = meta.get("resolution")
+                if isinstance(res, (int, float)):
+                    if best_resolution is None or res < best_resolution:
+                        best_resolution = res
+            results["pdb_method_counts"] = method_counts
+            if best_resolution is not None:
+                results["pdb_best_resolution"] = best_resolution
 
         return results
 

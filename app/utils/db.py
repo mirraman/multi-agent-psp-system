@@ -77,3 +77,12 @@ async def upsert_aggregate(accession: str, aggregate: Dict[str, Any]) -> None:
     )
 
 
+async def upsert_processed(accession: str, processed: Dict[str, Any]) -> None:
+    if not MongoConnection.db:
+        raise RuntimeError("Mongo not initialized")
+    await MongoConnection.db.processed.update_one(
+        {"accession": accession},
+        {"$set": {"accession": accession, "processed": processed}},
+        upsert=True,
+    )
+

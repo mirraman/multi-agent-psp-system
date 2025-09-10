@@ -10,6 +10,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_alphafold, fetch_pubmed
 from app.agents.data_agent import DataAgent
+from celery import chain
+from app.tasks import data_agent_task, processing_agent_task
+from fastapi import Query
 
 
 @asynccontextmanager
@@ -59,7 +62,54 @@ async def run_data_agent(accession: str, include_pubmed: bool = False, save: boo
     return result
 
 
- 
+@app.get("/process/{accession}")
+async def process_accession(accession: str, save: bool = Query(default=False)) -> Dict[str, Any]:
+    """
+    Try to process via the Celery chain (requires Redis broker and a running worker).
+    If the broker/worker are unavailable or an error occurs, fall back to local
+    synchronous processing in this process.
+
+    Client note: When falling back, the request will take longer (runs in-process)
+    and is not asynchronous. Ensure Redis + worker are running for async behavior.
+    """
+    # Prefer Celery chain when broker/worker are available. This is async and fast.
+    try:
+        result = chain(
+            data_agent_task.s(accession),
+            processing_agent_task.s(),
+        )().get(timeout=90)
+        if isinstance(result, dict):
+            if save and os.getenv("MONGODB_URI"):
+                try:
+                    from app.utils.db import MongoConnection, upsert_processed
+
+                    if not MongoConnection.db:
+                        await MongoConnection.init(os.getenv("MONGODB_URI"))
+                    await upsert_processed(accession, result)
+                except Exception as exc:
+                    print(f"Processed save failed: {exc}")
+            return result
+    except Exception as _:
+        pass
+
+    # Fallback path: run synchronously in-process if Celery/broker are unavailable.
+    # This keeps the endpoint functional, but latency may be higher and it is not async.
+    agent = DataAgent()
+    raw = agent.run(accession)
+    from app.agents.processing_agent import ProcessingAgent
+
+    proc = ProcessingAgent()
+    processed = proc.run(raw)
+    if save and os.getenv("MONGODB_URI"):
+        try:
+            from app.utils.db import MongoConnection, upsert_processed
+
+            if not MongoConnection.db:
+                await MongoConnection.init(os.getenv("MONGODB_URI"))
+            await upsert_processed(accession, processed)
+        except Exception as exc:
+            print(f"Processed save failed: {exc}")
+    return processed
 
 
 def main() -> None:
