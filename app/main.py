@@ -4,6 +4,7 @@ from typing import Any, Dict
 from contextlib import asynccontextmanager
 
 import os
+import logging
 from fastapi import FastAPI
 from fastapi import BackgroundTasks
 from starlette.requests import Request
@@ -11,7 +12,7 @@ from starlette.responses import JSONResponse
 from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_alphafold, fetch_pubmed
 from app.agents.data_agent import DataAgent
 from celery import chain
-from app.tasks import data_agent_task, processing_agent_task
+from app.tasks import data_agent_task, processing_agent_task, output_agent_task
 from fastapi import Query
 
 
@@ -37,6 +38,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+logger = logging.getLogger("psp.app")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 
 @app.get("/health")
@@ -53,11 +57,11 @@ async def run_data_agent(accession: str, include_pubmed: bool = False, save: boo
         try:
             from app.utils.db import MongoConnection, upsert_aggregate
 
-            if not MongoConnection.db:
+            if MongoConnection.db is None:
                 await MongoConnection.init(os.getenv("MONGODB_URI"))
             await upsert_aggregate(accession, result)
         except Exception as exc:
-            print(f"Aggregate save failed: {exc}")
+            logger.warning("Aggregate save failed", exc_info=exc)
 
     return result
 
@@ -77,17 +81,9 @@ async def process_accession(accession: str, save: bool = Query(default=False)) -
         result = chain(
             data_agent_task.s(accession),
             processing_agent_task.s(),
-        )().get(timeout=90)
+            output_agent_task.s(),
+        )().get(timeout=120)
         if isinstance(result, dict):
-            if save and os.getenv("MONGODB_URI"):
-                try:
-                    from app.utils.db import MongoConnection, upsert_processed
-
-                    if not MongoConnection.db:
-                        await MongoConnection.init(os.getenv("MONGODB_URI"))
-                    await upsert_processed(accession, result)
-                except Exception as exc:
-                    print(f"Processed save failed: {exc}")
             return result
     except Exception as _:
         pass
@@ -97,19 +93,93 @@ async def process_accession(accession: str, save: bool = Query(default=False)) -
     agent = DataAgent()
     raw = agent.run(accession)
     from app.agents.processing_agent import ProcessingAgent
+    from app.agents.output_agent import OutputAgent
 
     proc = ProcessingAgent()
     processed = proc.run(raw)
+    out = OutputAgent().run(accession, raw, processed)
     if save and os.getenv("MONGODB_URI"):
         try:
-            from app.utils.db import MongoConnection, upsert_processed
+            from app.utils.db import MongoConnection, upsert_protein_result
 
-            if not MongoConnection.db:
+            if MongoConnection.db is None:
                 await MongoConnection.init(os.getenv("MONGODB_URI"))
-            await upsert_processed(accession, processed)
+            await upsert_protein_result(accession, out)
         except Exception as exc:
-            print(f"Processed save failed: {exc}")
-    return processed
+            logger.warning("Output save failed", exc_info=exc)
+    return out
+
+
+@app.post("/runs/{accession}")
+async def trigger_run(accession: str, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    """
+    Trigger the end-to-end pipeline.
+    - If Celery/Redis are available, queue an async job and return task_id.
+    - If not available, fall back to a FastAPI BackgroundTask to compute and save.
+    """
+    # Try Celery async path first
+    try:
+        task = chain(
+            data_agent_task.s(accession),
+            processing_agent_task.s(),
+            output_agent_task.s(),
+        ).apply_async()
+        return {"status": "queued", "accession": accession, "task_id": task.id}
+    except Exception as exc:
+        logger.info("Celery unavailable, falling back to FastAPI background task", exc_info=exc)
+
+    # Fallback: run in background within this process, best-effort save if Mongo configured
+    def _run_sync() -> None:
+        try:
+            agent = DataAgent()
+            raw = agent.run(accession)
+            from app.agents.processing_agent import ProcessingAgent
+            from app.agents.output_agent import OutputAgent
+
+            proc = ProcessingAgent()
+            processed = proc.run(raw)
+            out = OutputAgent().run(accession, raw, processed)
+
+            import os as _os
+            mongo_uri = _os.getenv("MONGODB_URI")
+            if mongo_uri:
+                import asyncio as _asyncio
+                from app.utils.db import MongoConnection, upsert_protein_result
+
+                async def _save() -> None:
+                    if MongoConnection.db is None:
+                        await MongoConnection.init(mongo_uri)
+                    await upsert_protein_result(accession, out)
+
+                try:
+                    _asyncio.run(_save())
+                except Exception as save_exc:
+                    logger.warning("Background fallback save failed", exc_info=save_exc)
+        except Exception as run_exc:
+            logger.exception("Background fallback run failed", exc_info=run_exc)
+
+    background_tasks.add_task(_run_sync)
+    return {"status": "queued", "accession": accession, "mode": "background"}
+
+
+@app.get("/protein/{accession}")
+async def get_protein(accession: str) -> Dict[str, Any]:
+    try:
+        from app.utils.db import MongoConnection, get_protein_result
+
+        if MongoConnection.db is None:
+            mongo_uri = os.getenv("MONGODB_URI")
+            if mongo_uri:
+                await MongoConnection.init(mongo_uri)
+        if MongoConnection.db is None:
+            return {"error": "Mongo not initialized"}
+        doc = await get_protein_result(accession)
+        if not doc:
+            return {"error": "No results found"}
+        return doc
+    except Exception as exc:
+        logger.exception("Failed to get protein result", exc_info=exc)
+        return {"error": str(exc)}
 
 
 def main() -> None:

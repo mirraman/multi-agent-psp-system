@@ -1,8 +1,12 @@
 import json
 from typing import Any, Dict, List, Optional, Tuple
 import time
+import logging
 
 import requests
+
+
+logger = logging.getLogger("psp.fetchers")
 
 
 class HttpError(Exception):
@@ -36,6 +40,7 @@ def _get_json(url: str) -> Any:
             body_text = response.text
         except Exception:
             body_text = None
+        logger.warning("Non-200 response", extra={"url": url, "status": response.status_code})
         raise HttpError(url, response.status_code, body_text)
 
     try:
@@ -63,6 +68,7 @@ def _get_text(url: str) -> str:
             body_text = response.text
         except Exception:
             body_text = None
+        logger.warning("Non-200 response", extra={"url": url, "status": response.status_code})
         raise HttpError(url, response.status_code, body_text)
 
     return response.text
