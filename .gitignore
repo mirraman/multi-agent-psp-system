@@ -36,3 +36,10 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+.cursor/
+plan.md
+docker-compose.yml
+prosody/prosody.cfg.lua
+venv/
+.python-version
