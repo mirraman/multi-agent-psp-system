@@ -31,7 +31,7 @@ class PspAgent(BaseAgent):
 				to=self.coordinator_jid,
 				msg_type="response",
 				action="structure_predicted",
-				payload={"pdb": pdb_text, "confidence": None},
+				payload={"results": {"pdb": pdb_text, "confidence": None}},
 				job_id=job_id,
 			)
 			await self.send(msg)
