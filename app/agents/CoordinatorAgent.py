@@ -1,12 +1,14 @@
 import uuid
 from app.agents.BaseAgent import BaseAgent, AgentMessage
-from spade.behaviour import CyclicBehaviour
+from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
+from app.utils.db import MongoConnection
 
 class CoordinatorAgent(BaseAgent):
 	def __init__(self, jid: str, password: str):
 		super().__init__(jid, password)
 
 		self.jobs = {}
+		self.db_job_mapping = {}  
 
 		self.data_agent_jid = "data_agent@localhost"
 		self.psp_agent_jid = "psp_agent@localhost"
@@ -14,8 +16,8 @@ class CoordinatorAgent(BaseAgent):
 		self.synthesis_agent_jid = "synthesis_agent@localhost"
 		self.output_agent_jid = "output_agent@localhost"
 
-	async def start_job(self, input_type: str, input_value: str, options: dict = None): 
-		job_id = str(uuid.uuid4())
+	async def start_job(self, input_type: str, input_value: str, db_job_id: str = None, options: dict = None): 
+		job_id = db_job_id or str(uuid.uuid4())
 
 		self.jobs[job_id] = {
 			"status": "fetching_data",
@@ -27,6 +29,7 @@ class CoordinatorAgent(BaseAgent):
 			"processing_results": None,
 			"synthesis_results": None,
 			"output_results": None,
+			"db_job_id": db_job_id,  
 		}
 
 		msg = self.create_message(
@@ -43,7 +46,13 @@ class CoordinatorAgent(BaseAgent):
 	async def setup(self):
 		behaviour = MessageHandlerBehaviour(self)
 		self.add_behaviour(behaviour)
+		
+		check_db_behaviour = CheckDatabaseForJobsBehaviour(period=5)
+		self.add_behaviour(check_db_behaviour)
+
 		print(f"CoordinatorAgent {self.jid} started")
+
+
 
 	async def handle_response(self, agent_msg: AgentMessage):
 		job_id = agent_msg.job_id
@@ -122,6 +131,18 @@ class CoordinatorAgent(BaseAgent):
 			job["output_results"] = agent_msg.payload.get("output_path")
 			job["status"] = "completed"
 			print(f"Job {job_id} completed: {job['output_results']}")
+			
+			db_job_id = job.get("db_job_id")
+			if db_job_id and MongoConnection.db:
+				try:
+					from bson import ObjectId
+					await MongoConnection.db.tasks.update_one(
+						{"_id": ObjectId(db_job_id)},
+						{"$set": {"status": "completed", "output_path": job["output_results"]}}
+					)
+					print(f"Updated DB job {db_job_id} to completed")
+				except Exception as e:
+					print(f"Failed to update DB job: {e}")
 
 
 class MessageHandlerBehaviour(CyclicBehaviour):
@@ -134,3 +155,24 @@ class MessageHandlerBehaviour(CyclicBehaviour):
 		if msg:
 			agent_msg = self.coordinator.parse_message(msg)
 			await self.coordinator.handle_response(agent_msg)
+
+class CheckDatabaseForJobsBehaviour(PeriodicBehaviour):
+	async def run(self):
+		if MongoConnection.db is None:
+			return
+			
+		pending_job = await MongoConnection.db.tasks.find_one_and_update(
+			{"status": "pending"},
+			{"$set": {"status": "processing"}}
+		)
+		
+		if pending_job:
+			accession = pending_job.get("input_value")
+			db_job_id = str(pending_job["_id"])
+			print(f"Coordinator: Picked up job {db_job_id} for {accession}")
+			
+			await self.agent.start_job(
+				input_type="accession", 
+				input_value=accession,
+				db_job_id=db_job_id
+			)

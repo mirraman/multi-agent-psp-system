@@ -56,7 +56,7 @@ class ProcessingAgent:
 
 
 if __name__ == "__main__":
-    from backend.app.agents.DataAgent import DataAgent
+    from backend.app.services.DataService import DataAgent
 
     da = DataAgent()
     raw_data = da.run("P69905")

@@ -1,67 +1,45 @@
-from time import sleep
-from typing import Any, Dict
-
+import requests
 from app.celery_app import celery_app
-from backend.app.agents.DataAgent import DataAgent
-from backend.app.agents.ProcessingAgent import ProcessingAgent
-from backend.app.agents.OutputAgent import OutputAgent
-from app.utils.db import MongoConnection, upsert_protein_result
 
 
-@celery_app.task(name="app.tasks.ping")
-def ping(message: str) -> str:
-    sleep(1)
-    return f"pong: {message}"
+@celery_app.task(name="app.tasks.predict_structure_task", bind=True, max_retries=2)
+def predict_structure_task(self, sequence: str) -> dict:
+ 
+    esmfold_api_url = "https://api.esmatlas.com/foldSequence/v1/pdb/"
+    
+    try:
+        response = requests.post(
+            esmfold_api_url,
+            data=sequence,
+            headers={"Content-Type": "text/plain"},
+            timeout=120
+        )
+        
+        if response.status_code == 200:
+            return {"status": "success", "pdb_text": response.text}
+        else:
+            return {"status": "error", "code": response.status_code, "message": response.text[:200]}
+            
+    except requests.Timeout:
+        return {"status": "error", "message": "ESMFold API timeout"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(name="app.tasks.data_agent_task")
-def data_agent_task(accession: str) -> Dict[str, Any]:
-    agent = DataAgent()
-    return agent.run(accession)
-
-
-@celery_app.task(name="app.tasks.processing_agent_task")
-def processing_agent_task(data: Dict[str, Any]) -> Dict[str, Any]:
-    agent = ProcessingAgent()
-    processed = agent.run(data)
-    return {
-        "accession": data.get("accession"),
-        "raw": data,
-        "processed": processed,
-    }
-
-
-
-@celery_app.task(name="app.tasks.output_agent_task")
-def output_agent_task(args: Dict[str, Any]) -> Dict[str, Any]:
+@celery_app.task(name="app.tasks.fetch_alphafold_task")
+def fetch_alphafold_task(accession: str) -> dict:
     """
-    Expects a payload with keys: accession, raw, processed
     """
-    accession = args.get("accession")
-    raw = args.get("raw") or {}
-    processed = args.get("processed") or {}
-
-    agent = OutputAgent()
-    output = agent.run(accession, raw, processed)
-
-    # Best-effort async save using Motor via a synchronous wrapper
-    # Celery tasks here are sync; we cannot await. We will perform
-    # a fire-and-forget by spinning the event loop in a minimal way
-    # only if MONGODB_URI is set and connection is available.
-    import os
-    mongo_uri = os.getenv("MONGODB_URI")
-    if mongo_uri:
-        try:
-            import asyncio
-
-            async def _save() -> None:
-                if MongoConnection.db is None:
-                    await MongoConnection.init(mongo_uri)
-                await upsert_protein_result(accession, output)
-
-            asyncio.run(_save())
-        except Exception:
-            pass
-
-    return output
-
+    url = f"https://www.alphafold.ebi.ac.uk/api/prediction/{accession}"
+    
+    try:
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list) and data:
+                return {"status": "success", "data": data[0]}
+            return {"status": "success", "data": None}
+        else:
+            return {"status": "error", "code": response.status_code}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
