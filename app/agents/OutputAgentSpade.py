@@ -85,6 +85,9 @@ class OutputAgentSpade(BaseAgent):
 
 		pdb_text = psp_results.get("pdb", "")
 		pdb_escaped = pdb_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+		
+		esmfold_plddt = metrics.get("esmfold_plddt_mean")
+		esmfold_plddt_str = f"{esmfold_plddt:.2f}" if isinstance(esmfold_plddt, (int, float)) else "N/A"
 
 		html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -128,6 +131,7 @@ class OutputAgentSpade(BaseAgent):
             height: 400px;
             border-radius: 8px;
             overflow: hidden;
+            position: relative;
         }}
         .metric {{
             display: flex;
@@ -169,7 +173,7 @@ class OutputAgentSpade(BaseAgent):
                 </div>
                 <div class="metric">
                     <span>ESMFold pLDDT</span>
-                    <span class="metric-value">{metrics.get('esmfold_plddt_mean', 'N/A'):.1f if isinstance(metrics.get('esmfold_plddt_mean'), (int, float)) else 'N/A'}</span>
+                    <span class="metric-value">{esmfold_plddt_str}</span>
                 </div>
             </div>
 
@@ -197,8 +201,9 @@ class OutputAgentSpade(BaseAgent):
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {{
-            let viewer = $3Dmol.createViewer('viewer', {{
-                backgroundColor: 'rgba(0,0,0,0)'
+            let element = document.getElementById('viewer');
+            let viewer = $3Dmol.createViewer(element, {{
+                backgroundColor: '#0a0a15'
             }});
             
             let pdbData = `{pdb_escaped}`;
@@ -209,7 +214,7 @@ class OutputAgentSpade(BaseAgent):
                 viewer.zoomTo();
                 viewer.render();
             }} else {{
-                document.getElementById('viewer').innerHTML = '<p style="padding:2rem;color:#888;">No structure available</p>';
+                element.innerHTML = '<p style="padding:2rem;color:#888;">No structure available</p>';
             }}
         }});
     </script>
