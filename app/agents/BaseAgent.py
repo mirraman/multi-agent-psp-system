@@ -30,6 +30,9 @@ class BaseAgent(Agent):
 	async def setup(self):
 		print(f"Agent {self.jid} started")
 
+	async def send(self, msg):
+		await self.client.send(msg)
+
 	def create_message(
 			self,
 			to: str,
