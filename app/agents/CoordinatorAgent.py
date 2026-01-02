@@ -1,5 +1,5 @@
 import uuid
-from app.agents.base_agent import BaseAgent, AgentMessage
+from backend.app.agents.BaseAgent import BaseAgent, AgentMessage
 from spade.behaviour import CyclicBehaviour
 
 class CoordinatorAgent(BaseAgent):

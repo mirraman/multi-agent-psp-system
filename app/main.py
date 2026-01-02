@@ -10,7 +10,7 @@ from fastapi import BackgroundTasks
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_alphafold, fetch_pubmed
-from app.agents.data_agent import DataAgent
+from backend.app.agents.DataAgent import DataAgent
 from celery import chain
 from app.tasks import data_agent_task, processing_agent_task, output_agent_task
 from fastapi import Query
@@ -92,8 +92,8 @@ async def process_accession(accession: str, save: bool = Query(default=False)) -
     # This keeps the endpoint functional, but latency may be higher and it is not async.
     agent = DataAgent()
     raw = agent.run(accession)
-    from app.agents.processing_agent import ProcessingAgent
-    from app.agents.output_agent import OutputAgent
+    from backend.app.agents.ProcessingAgent import ProcessingAgent
+    from backend.app.agents.OutputAgent import OutputAgent
 
     proc = ProcessingAgent()
     processed = proc.run(raw)
@@ -133,8 +133,8 @@ async def trigger_run(accession: str, background_tasks: BackgroundTasks) -> Dict
         try:
             agent = DataAgent()
             raw = agent.run(accession)
-            from app.agents.processing_agent import ProcessingAgent
-            from app.agents.output_agent import OutputAgent
+            from backend.app.agents.ProcessingAgent import ProcessingAgent
+            from backend.app.agents.OutputAgent import OutputAgent
 
             proc = ProcessingAgent()
             processed = proc.run(raw)

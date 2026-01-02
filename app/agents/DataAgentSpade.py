@@ -1,5 +1,5 @@
-from app.agents.base_agent import BaseAgent
-from app.agents.data_agent import DataAgent
+from backend.app.agents.BaseAgent import BaseAgent
+from backend.app.agents.DataAgent import DataAgent
 from spade.behaviour import CyclicBehaviour
 
 class DataAgentSpade(BaseAgent):

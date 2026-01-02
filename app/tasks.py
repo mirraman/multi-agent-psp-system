@@ -2,9 +2,9 @@ from time import sleep
 from typing import Any, Dict
 
 from app.celery_app import celery_app
-from app.agents.data_agent import DataAgent
-from app.agents.processing_agent import ProcessingAgent
-from app.agents.output_agent import OutputAgent
+from backend.app.agents.DataAgent import DataAgent
+from backend.app.agents.ProcessingAgent import ProcessingAgent
+from backend.app.agents.OutputAgent import OutputAgent
 from app.utils.db import MongoConnection, upsert_protein_result
 
 
