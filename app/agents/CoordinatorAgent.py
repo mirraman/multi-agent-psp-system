@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from app.agents.BaseAgent import BaseAgent, AgentMessage
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from app.utils.db import MongoConnection
@@ -133,16 +134,33 @@ class CoordinatorAgent(BaseAgent):
 			print(f"Job {job_id} completed: {job['output_results']}")
 			
 			db_job_id = job.get("db_job_id")
-			if db_job_id and MongoConnection.db:
-				try:
-					from bson import ObjectId
-					await MongoConnection.db.tasks.update_one(
-						{"_id": ObjectId(db_job_id)},
-						{"$set": {"status": "completed", "output_path": job["output_results"]}}
-					)
-					print(f"Updated DB job {db_job_id} to completed")
-				except Exception as e:
-					print(f"Failed to update DB job: {e}")
+			if MongoConnection.db:
+				if db_job_id:
+					try:
+						from bson import ObjectId
+						await MongoConnection.db.tasks.update_one(
+							{"_id": ObjectId(db_job_id)},
+							{"$set": {"status": "completed", "output_path": job["output_results"]}}
+						)
+					except Exception as e:
+						print(f"Failed to update task status: {e}")
+				
+				final_output = {
+					"accession": job["input_value"],
+					"status": "completed",
+					"timestamp": str(datetime.now()),
+					"output_path": job["output_results"],
+					"metrics": job.get("processing_results"),
+					"synthesis": job.get("synthesis_results"),
+					"uniprot": job["raw_data"].get("uniprot"),
+					"pdb_files": job["psp_results"].get("pdb")
+				}
+				await MongoConnection.db.protein_results.update_one(
+					{"accession": job["input_value"]},
+					{"$set": final_output},
+					upsert=True
+				)
+				print(f"Saved final results to DB for {job['input_value']}")
 
 
 class MessageHandlerBehaviour(CyclicBehaviour):
