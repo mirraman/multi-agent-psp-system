@@ -16,17 +16,18 @@ class DataAgentSpade(BaseAgent):
 
 	async def handle_fetch_data(self, agent_msg):
 		job_id = agent_msg.job_id
-		input_type = agent_msg.payload.get("input_type")
+		input_type = agent_msg.payload.get("input_type", "accession")
 		input_value = agent_msg.payload.get("input_value")
 		include_pubmed = agent_msg.payload.get("include_pubmed", False)
-
-		if input_type == "accession":
-			data = self._fetch_by_accession(input_value, include_pubmed)
-		elif input_type == "fasta":
-			data = self._parse_fasta(input_value)
+		
+		print(f"[{job_id}] DataAgent: fetching data for {input_type}: {input_value[:50]}...")
+		
+		# Handle FASTA sequences differently - no external lookups needed
+		if input_type == "fasta":
+			data = self._fetch_by_fasta(input_value)
 		else:
-			data = {"error": f"Unknown input_type: {input_type}"}
-
+			data = self._fetch_by_accession(input_value, include_pubmed)
+		
 		msg = self.create_message(
 			to=self.coordinator_jid,
 			msg_type="response",
@@ -35,7 +36,33 @@ class DataAgentSpade(BaseAgent):
 			job_id=job_id,
 		)
 		await self.send(msg)
-
+	
+	def _fetch_by_fasta(self, fasta_content: str) -> dict:
+		"""
+		Parse FASTA sequence directly without external API calls.
+		For FASTA input, we skip UniProt/AlphaFold DB/PDB lookups.
+		"""
+		# Parse FASTA format (supports both ">header\nseq" and just "seq")
+		lines = fasta_content.strip().split('\n')
+		if lines[0].startswith('>'):
+			header = lines[0][1:]  # Remove '>'
+			sequence = ''.join(lines[1:])
+		else:
+			header = "Custom sequence"
+			sequence = fasta_content.strip()
+		
+		return {
+			"uniprot": {
+				"name": header,
+				"sequence": sequence,
+				"pdb_ids": [],
+				"alphafold_links": []
+			},
+			"pdb": [],
+			"alphafold": {},  # No AlphaFold DB for custom sequences
+			"pubmed": []
+		}
+	
 	def _fetch_by_accession(self, accession: str, include_pubmed: bool = False) -> Dict[str, Any]:
 		uniprot_data = fetch_uniprot(accession)
 

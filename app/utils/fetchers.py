@@ -173,10 +173,13 @@ def fetch_alphafold(accession: str) -> Dict[str, Any]:
     plddt_mean: Optional[float] = None
     plddt_min: Optional[float] = None
     plddt_max: Optional[float] = None
-    if not confidence_metrics and pdb_url:
+    pdb_text_content: Optional[str] = None
+    
+    if pdb_url:
         try:
-            pdb_text = _get_text(pdb_url)
-            plddt_mean, plddt_min, plddt_max = _plddt_from_pdb_text(pdb_text)
+            pdb_text_content = _get_text(pdb_url)
+            if not confidence_metrics:
+                plddt_mean, plddt_min, plddt_max = _plddt_from_pdb_text(pdb_text_content)
         except Exception:
             pass
 
@@ -186,6 +189,7 @@ def fetch_alphafold(accession: str) -> Dict[str, Any]:
         "pae_json_url": pae_json_url,
         "pae_image_url": pae_image_url,
         "confidence_metrics": confidence_metrics,
+        "pdb_text": pdb_text_content,  # Return actual PDB content
     }
 
     if plddt_mean is not None:

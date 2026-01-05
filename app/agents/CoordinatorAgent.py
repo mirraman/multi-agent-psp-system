@@ -198,11 +198,12 @@ class CheckDatabaseForJobsBehaviour(PeriodicBehaviour):
 		
 		if pending_job:
 			accession = pending_job.get("input_value")
+			input_type = pending_job.get("input_type", "accession")
 			db_job_id = str(pending_job["_id"])
-			print(f"Coordinator: Picked up job {db_job_id} for {accession}")
+			print(f"Coordinator: Picked up job {db_job_id} for {accession} ({input_type})")
 			
 			await self.agent.start_job(
-				input_type="accession", 
+				input_type=input_type, 
 				input_value=accession,
 				db_job_id=db_job_id
 			)

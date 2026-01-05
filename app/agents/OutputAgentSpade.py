@@ -82,8 +82,23 @@ class OutputAgentSpade(BaseAgent):
 		metrics = output_doc.get("metrics") or {}
 		synthesis = output_doc.get("synthesis") or {}
 		psp_results = output_doc.get("esmfold") or {}
+		alphafold_data = output_doc.get("alphafold") or {}
 
-		pdb_text = psp_results.get("pdb", "")
+		# Determine which PDB to show based on synthesis "best_model"
+		best_model = synthesis.get("best_model", "esmfold")
+		pdb_text = ""
+		source_display = "Unknown Source"
+		
+		if best_model == "alphafold_db":
+			pdb_text = alphafold_data.get("pdb_text", "")
+			source_display = "AlphaFold DB"
+		else:
+			# Default to ESMFold if best_model is esmfold or fallback
+			# psp_results is {"esmfold": {"pdb": "...", ...}}
+			esmfold_data = psp_results.get("esmfold", {})
+			pdb_text = esmfold_data.get("pdb", "")
+			source_display = "ESMFold Prediction"
+			
 		pdb_escaped = pdb_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
 		
 		esmfold_plddt = metrics.get("esmfold_plddt_mean")
@@ -193,7 +208,7 @@ class OutputAgentSpade(BaseAgent):
             </div>
 
             <div class="card full-width">
-                <h2>3D Structure (ESMFold Prediction)</h2>
+                <h2>3D Structure ({source_display})</h2>
                 <div id="viewer" class="viewer"></div>
             </div>
         </div>
