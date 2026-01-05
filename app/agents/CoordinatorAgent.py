@@ -144,7 +144,7 @@ class CoordinatorAgent(BaseAgent):
 			print(f"Job {job_id} completed: {job['output_results']}")
 			
 			db_job_id = job.get("db_job_id")
-			if MongoConnection.db:
+			if MongoConnection.db is not None:
 				if db_job_id:
 					try:
 						from bson import ObjectId
