@@ -79,8 +79,18 @@ class CoordinatorAgent(BaseAgent):
 			await self.send(msg)
 
 		elif action == "structure_predicted":
-			job["psp_results"] = agent_msg.payload.get("results")
+			# New multi-model format from PspAgent
+			job["psp_results"] = agent_msg.payload.get("results", {})
+			job["models_used"] = agent_msg.payload.get("models_used", [])
+			job["psp_errors"] = agent_msg.payload.get("errors", {})
 			job["status"] = "processing"
+			
+			# Log success/failure status
+			if job["models_used"]:
+				print(f"[{job_id}] Received predictions from: {job['models_used']}")
+			if job["psp_errors"]:
+				print(f"[{job_id}] Warning: Some models failed: {list(job['psp_errors'].keys())}")
+			
 			msg = self.create_message(
 				to=self.processing_agent_jid,
 				msg_type="request",
@@ -153,7 +163,9 @@ class CoordinatorAgent(BaseAgent):
 					"metrics": job.get("processing_results"),
 					"synthesis": job.get("synthesis_results"),
 					"uniprot": job["raw_data"].get("uniprot"),
-					"pdb_files": job["psp_results"].get("pdb")
+					"psp_results": job.get("psp_results"),  # Now contains multi-model format
+					"models_used": job.get("models_used", []),
+					"psp_errors": job.get("psp_errors", {})
 				}
 				await MongoConnection.db.protein_results.update_one(
 					{"accession": job["input_value"]},

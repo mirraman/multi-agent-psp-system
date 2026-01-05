@@ -2,7 +2,7 @@ from collections import Counter
 from typing import Any, Dict
 
 
-class ProcessingAgent:
+class ProcessingService:
     def __init__(self) -> None:
         pass
 

@@ -1,7 +1,8 @@
+from typing import Any, Dict
 from app.agents.BaseAgent import BaseAgent
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from celery.result import AsyncResult
-from app.tasks import predict_structure_task
+from app.tasks import predict_esmfold
 
 
 class PspAgent(BaseAgent):
@@ -23,10 +24,13 @@ class PspAgent(BaseAgent):
 		job_id = agent_msg.job_id
 		sequence = agent_msg.payload.get("sequence")
 		
-		print(f"[{job_id}] PspAgent: Delegating prediction to Celery...")
+		print(f"[{job_id}] PspAgent: Launching ESMFold prediction...")
 		
-		task = predict_structure_task.delay(sequence)
-		self.pending_tasks[job_id] = task.id
+		# Launch ESMFold task
+		task_esm = predict_esmfold.delay(sequence)
+		self.pending_tasks[job_id] = task_esm.id
+		
+		print(f"[{job_id}] Launched ESMFold task: {task_esm.id}")
 
 
 class MessageHandlerBehaviour(CyclicBehaviour):
@@ -51,20 +55,34 @@ class CheckCeleryTasksBehaviour(PeriodicBehaviour):
 			async_result = AsyncResult(task_id)
 			
 			if async_result.ready():
-				print(f"[{job_id}] PspAgent: Celery task finished!")
+				print(f"[{job_id}] PspAgent: ESMFold task finished!")
 				
 				result_data = async_result.result
 				del self.agent.pending_tasks[job_id]
 				
+				# Handle both success AND error cases
 				if result_data.get("status") == "success":
 					payload = {
 						"results": {
-							"pdb": result_data.get("pdb_text"),
-							"source": "ESMFold_Celery"
+							"esmfold": {
+								"pdb": result_data.get("pdb_text"),
+								"source": result_data.get("source", "ESMFold_API")
+							}
+						},
+						"models_used": ["esmfold"],
+						"errors": {}
+					}
+					print(f"[{job_id}] ESMFold succeeded")
+				else:
+					# ESMFold failed - send error so pipeline can use AlphaFold DB as fallback
+					payload = {
+						"results": {},
+						"models_used": [],
+						"errors": {
+							"esmfold": result_data.get("error", "Unknown error")
 						}
 					}
-				else:
-					payload = {"error": result_data.get("error")}
+					print(f"[{job_id}] ESMFold failed: {result_data.get('error')}")
 				
 				msg = self.agent.create_message(
 					to=self.agent.coordinator_jid,
@@ -74,3 +92,4 @@ class CheckCeleryTasksBehaviour(PeriodicBehaviour):
 					job_id=job_id,
 				)
 				await self.agent.send(msg)
+

@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_alphafold, fetch_pubmed
 
 
-class DataAgent:
+class DataService:
     def __init__(self) -> None:
         self.uniprot_client = fetch_uniprot
         self.pdb_client = fetch_pdb
