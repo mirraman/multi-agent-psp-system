@@ -84,7 +84,6 @@ class OutputAgentSpade(BaseAgent):
 		psp_results = output_doc.get("esmfold") or {}
 		alphafold_data = output_doc.get("alphafold") or {}
 
-		# Determine which PDB to show based on synthesis "best_model"
 		best_model = synthesis.get("best_model", "esmfold")
 		pdb_text = ""
 		source_display = "Unknown Source"
@@ -93,8 +92,6 @@ class OutputAgentSpade(BaseAgent):
 			pdb_text = alphafold_data.get("pdb_text", "")
 			source_display = "AlphaFold DB"
 		else:
-			# Default to ESMFold if best_model is esmfold or fallback
-			# psp_results is {"esmfold": {"pdb": "...", ...}}
 			esmfold_data = psp_results.get("esmfold", {})
 			pdb_text = esmfold_data.get("pdb", "")
 			source_display = "ESMFold Prediction"

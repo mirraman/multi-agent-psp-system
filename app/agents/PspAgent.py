@@ -60,7 +60,6 @@ class CheckCeleryTasksBehaviour(PeriodicBehaviour):
 				result_data = async_result.result
 				del self.agent.pending_tasks[job_id]
 				
-				# Handle both success AND error cases
 				if result_data.get("status") == "success":
 					payload = {
 						"results": {
@@ -74,7 +73,6 @@ class CheckCeleryTasksBehaviour(PeriodicBehaviour):
 					}
 					print(f"[{job_id}] ESMFold succeeded")
 				else:
-					# ESMFold failed - send error so pipeline can use AlphaFold DB as fallback
 					payload = {
 						"results": {},
 						"models_used": [],

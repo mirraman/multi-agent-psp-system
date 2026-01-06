@@ -22,7 +22,6 @@ class DataAgentSpade(BaseAgent):
 		
 		print(f"[{job_id}] DataAgent: fetching data for {input_type}: {input_value[:50]}...")
 		
-		# Handle FASTA sequences differently - no external lookups needed
 		if input_type == "fasta":
 			data = self._fetch_by_fasta(input_value)
 		else:
@@ -42,10 +41,9 @@ class DataAgentSpade(BaseAgent):
 		Parse FASTA sequence directly without external API calls.
 		For FASTA input, we skip UniProt/AlphaFold DB/PDB lookups.
 		"""
-		# Parse FASTA format (supports both ">header\nseq" and just "seq")
 		lines = fasta_content.strip().split('\n')
 		if lines[0].startswith('>'):
-			header = lines[0][1:]  # Remove '>'
+			header = lines[0][1:] 
 			sequence = ''.join(lines[1:])
 		else:
 			header = "Custom sequence"
@@ -59,7 +57,7 @@ class DataAgentSpade(BaseAgent):
 				"alphafold_links": []
 			},
 			"pdb": [],
-			"alphafold": {},  # No AlphaFold DB for custom sequences
+			"alphafold": {}, 
 			"pubmed": []
 		}
 	

@@ -67,18 +67,15 @@ class ProcessingAgentSpade(BaseAgent):
 				results["pdb_best_resolution"] = best_resolution
 
 		if psp_results:
-			# ESMFold predictions
 			esmfold_data = psp_results.get("esmfold", {})
 			if esmfold_data:
 				pdb_text = esmfold_data.get("pdb", "")
 				if pdb_text:
 					results["esmfold_predicted"] = True
-					# Extract pLDDT from PDB if available
 					plddt = self._extract_plddt_from_pdb(pdb_text)
 					if plddt:
 						results["esmfold_plddt_mean"] = plddt
 		else:
-			# No predictions available
 			results["esmfold_predicted"] = False
 
 		return results

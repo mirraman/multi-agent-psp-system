@@ -78,13 +78,11 @@ class CoordinatorAgent(BaseAgent):
 			)
 			await self.send(msg)
 		elif action == "structure_predicted":
-			# New multi-model format from PspAgent
 			job["psp_results"] = agent_msg.payload.get("results", {})
 			job["models_used"] = agent_msg.payload.get("models_used", [])
 			job["psp_errors"] = agent_msg.payload.get("errors", {})
 			job["status"] = "processing"
 			
-			# Log success/failure status
 			if job["models_used"]:
 				print(f"[{job_id}] Received predictions from: {job['models_used']}")
 			if job["psp_errors"]:
@@ -162,7 +160,7 @@ class CoordinatorAgent(BaseAgent):
 					"metrics": job.get("processing_results"),
 					"synthesis": job.get("synthesis_results"),
 					"uniprot": job["raw_data"].get("uniprot"),
-					"psp_results": job.get("psp_results"),  # Now contains multi-model format
+					"psp_results": job.get("psp_results"),  
 					"models_used": job.get("models_used", []),
 					"psp_errors": job.get("psp_errors", {})
 				}

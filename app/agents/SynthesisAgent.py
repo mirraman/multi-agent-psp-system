@@ -59,13 +59,11 @@ class SynthesisAgent(BaseAgent):
 			"available_structures": [],
 		}
 		
-		# Collect all available metrics
 		alphafold_db_conf = processing_results.get("alphafold_confidence")
 		esmfold_plddt = processing_results.get("esmfold_plddt_mean")
 		pdb_count = processing_results.get("pdb_count", 0)
 		best_resolution = processing_results.get("pdb_best_resolution")
 		
-		# Build availability list for logging
 		available = []
 		if esmfold_plddt:
 			available.append(f"ESMFold (pLDDT: {esmfold_plddt:.1f})")
@@ -76,14 +74,11 @@ class SynthesisAgent(BaseAgent):
 		
 		synthesis["available_structures"] = available
 		
-		# Scenario detection
 		has_esmfold = esmfold_plddt is not None
 		has_alphafold_db = alphafold_db_conf is not None
 		
-		# SCENARIO A: Both ESMFold and AlphaFold DB available
 		if has_esmfold and has_alphafold_db:
 			synthesis["scenario"] = "both_success"
-			# Priority: ESMFold if good quality, otherwise AlphaFold DB
 			if esmfold_plddt > 70:
 				synthesis["best_model"] = "esmfold"
 				synthesis["best_model_source"] = "ESMFold prediction"
@@ -95,7 +90,6 @@ class SynthesisAgent(BaseAgent):
 				synthesis["confidence_score"] = alphafold_db_conf
 				synthesis["summary"] = f"ESMFold quality low, using AlphaFold DB (confidence: {alphafold_db_conf})."
 			else:
-				# Use best available even if below ideal thresholds
 				if esmfold_plddt > alphafold_db_conf:
 					synthesis["best_model"] = "esmfold"
 					synthesis["best_model_source"] = "ESMFold prediction"
@@ -107,7 +101,6 @@ class SynthesisAgent(BaseAgent):
 					synthesis["confidence_score"] = alphafold_db_conf
 					synthesis["summary"] = f"Using AlphaFold DB (confidence: {alphafold_db_conf}) over ESMFold ({esmfold_plddt:.1f})."
 		
-		# SCENARIO B: Partial success (only one source available)
 		elif has_esmfold or has_alphafold_db:
 			synthesis["scenario"] = "partial_success"
 			
@@ -123,7 +116,6 @@ class SynthesisAgent(BaseAgent):
 				synthesis["confidence_score"] = alphafold_db_conf
 				synthesis["summary"] = f"ESMFold failed, using AlphaFold DB (confidence: {alphafold_db_conf})."
 			
-			# Use best available even if below threshold
 			elif esmfold_plddt:
 				synthesis["best_model"] = "esmfold"
 				synthesis["best_model_source"] = "ESMFold prediction"
@@ -136,7 +128,6 @@ class SynthesisAgent(BaseAgent):
 				synthesis["confidence_score"] = alphafold_db_conf
 				synthesis["summary"] = f"Using AlphaFold DB (confidence: {alphafold_db_conf}) - ESMFold unavailable."
 		
-		# SCENARIO C: Total failure - use experimental PDB as last resort
 		else:
 			synthesis["scenario"] = "total_failure"
 			if pdb_count > 0 and best_resolution:
