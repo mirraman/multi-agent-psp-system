@@ -38,8 +38,7 @@ class SynthesisAgent(BaseAgent):
 		processing_results: Dict[str, Any]
 	) -> Dict[str, Any]:
 		"""
-		** SALVAMAR (LIFEGUARD) LOGIC - HYBRID APPROACH **
-		
+		**LIFEGUARD LOGIC - HYBRID APPROACH**
 		Handles 3 scenarios with graceful degradation:
 		A) ESMFold succeeds + AlphaFold DB available → Compare and choose best
 		B) Partial success → Use what we have (ESMFold OR AlphaFold DB)
@@ -150,111 +149,6 @@ class SynthesisAgent(BaseAgent):
 				synthesis["summary"] = "Total failure: No structure available (ESMFold failed, AlphaFold DB empty, no experimental PDB)."
 		
 		return synthesis
-		synthesis: Dict[str, Any] = {
-			"best_model": None,
-			"best_model_source": None,
-			"confidence_score": None,
-			"summary": "",
-			"scenario": None,
-			"available_structures": [],
-		}
-		
-		# Collect all available metrics
-		alphafold_db_conf = processing_results.get("alphafold_confidence")
-		alphafold_pred_plddt = processing_results.get("alphafold_pred_plddt_mean")
-		esmfold_plddt = processing_results.get("esmfold_plddt_mean")
-		pdb_count = processing_results.get("pdb_count", 0)
-		best_resolution = processing_results.get("pdb_best_resolution")
-		
-		# Build availability list for logging
-		available = []
-		if alphafold_pred_plddt:
-			available.append(f"AlphaFold Prediction (pLDDT: {alphafold_pred_plddt:.1f})")
-		if esmfold_plddt:
-			available.append(f"ESMFold (pLDDT: {esmfold_plddt:.1f})")
-		if alphafold_db_conf:
-			available.append(f"AlphaFold DB (confidence: {alphafold_db_conf})")
-		if pdb_count > 0:
-			available.append(f"Experimental PDB ({pdb_count} structures)")
-		
-		synthesis["available_structures"] = available
-		
-		# Scenario detection
-		has_esmfold = esmfold_plddt is not None
-		has_alphafold_pred = alphafold_pred_plddt is not None
-		has_alphafold_db = alphafold_db_conf is not None
-		
-		# SCENARIO A: Both predictions succeeded
-		if has_esmfold and has_alphafold_pred:
-			synthesis["scenario"] = "both_success"
-			# Priority: highest confidence
-			if alphafold_pred_plddt > esmfold_plddt:
-				synthesis["best_model"] = "alphafold_prediction"
-				synthesis["best_model_source"] = "AlphaFold Prediction"
-				synthesis["confidence_score"] = alphafold_pred_plddt
-				synthesis["summary"] = f"Both models succeeded. Using AlphaFold prediction (pLDDT: {alphafold_pred_plddt:.1f}) over ESMFold (pLDDT: {esmfold_plddt:.1f})."
-			else:
-				synthesis["best_model"] = "esmfold"
-				synthesis["best_model_source"] = "ESMFold prediction"
-				synthesis["confidence_score"] = esmfold_plddt
-				synthesis["summary"] = f"Both models succeeded. Using ESMFold (pLDDT: {esmfold_plddt:.1f}) over AlphaFold prediction (pLDDT: {alphafold_pred_plddt:.1f})."
-		
-		# SCENARIO B: Partial success (at least one model worked)
-		elif has_esmfold or has_alphafold_pred or has_alphafold_db:
-			synthesis["scenario"] = "partial_success"
-			
-			# Priority order: AlphaFold pred > ESMFold > AlphaFold DB
-			if alphafold_pred_plddt and alphafold_pred_plddt > 85:
-				synthesis["best_model"] = "alphafold_prediction"
-				synthesis["best_model_source"] = "AlphaFold Prediction"
-				synthesis["confidence_score"] = alphafold_pred_plddt
-				synthesis["summary"] = f"ESMFold failed, but AlphaFold prediction succeeded with high confidence (pLDDT: {alphafold_pred_plddt:.1f})."
-			
-			elif esmfold_plddt and esmfold_plddt > 70:
-				synthesis["best_model"] = "esmfold"
-				synthesis["best_model_source"] = "ESMFold prediction"
-				synthesis["confidence_score"] = esmfold_plddt
-				synthesis["summary"] = f"AlphaFold prediction failed, but ESMFold succeeded with good confidence (pLDDT: {esmfold_plddt:.1f})."
-			
-			elif alphafold_db_conf and alphafold_db_conf > 90:
-				synthesis["best_model"] = "alphafold_db"
-				synthesis["best_model_source"] = "AlphaFold DB"
-				synthesis["confidence_score"] = alphafold_db_conf
-				synthesis["summary"] = f"Both predictions failed, but AlphaFold DB available with high confidence ({alphafold_db_conf})."
-			
-			# Use best available even if below threshold
-			elif alphafold_pred_plddt:
-				synthesis["best_model"] = "alphafold_prediction"
-				synthesis["best_model_source"] = "AlphaFold Prediction"
-				synthesis["confidence_score"] = alphafold_pred_plddt
-				synthesis["summary"] = f"Using AlphaFold prediction (pLDDT: {alphafold_pred_plddt:.1f}) - best available option."
-			
-			elif esmfold_plddt:
-				synthesis["best_model"] = "esmfold"
-				synthesis["best_model_source"] = "ESMFold prediction"
-				synthesis["confidence_score"] = esmfold_plddt
-				synthesis["summary"] = f"Using ESMFold (pLDDT: {esmfold_plddt:.1f}) - best available option."
-			
-			elif alphafold_db_conf:
-				synthesis["best_model"] = "alphafold_db"
-				synthesis["best_model_source"] = "AlphaFold DB"
-				synthesis["confidence_score"] = alphafold_db_conf
-				synthesis["summary"] = f"Using AlphaFold DB (confidence: {alphafold_db_conf}) - predictions unavailable."
-		
-		# SCENARIO C: Total failure - use experimental PDB as last resort
-		else:
-			synthesis["scenario"] = "total_failure"
-			if pdb_count > 0 and best_resolution:
-				synthesis["best_model"] = "experimental"
-				synthesis["best_model_source"] = "Experimental PDB"
-				synthesis["confidence_score"] = best_resolution
-				synthesis["summary"] = f"All predictions failed. Using experimental structure (resolution: {best_resolution}Å)."
-			else:
-				synthesis["best_model"] = "none"
-				synthesis["summary"] = "Total failure: No structure available (all predictions failed, AlphaFold DB empty, no experimental PDB)."
-		
-		return synthesis
-
 
 class MessageHandlerBehaviour(CyclicBehaviour):
 	def __init__(self, agent):

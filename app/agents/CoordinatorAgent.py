@@ -43,7 +43,7 @@ class CoordinatorAgent(BaseAgent):
 		await self.send(msg)
 
 		return job_id
-	
+		
 	async def setup(self):
 		behaviour = MessageHandlerBehaviour(self)
 		self.add_behaviour(behaviour)
@@ -77,7 +77,6 @@ class CoordinatorAgent(BaseAgent):
 				job_id=job_id,
 			)
 			await self.send(msg)
-
 		elif action == "structure_predicted":
 			# New multi-model format from PspAgent
 			job["psp_results"] = agent_msg.payload.get("results", {})
