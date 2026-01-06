@@ -1,8 +1,6 @@
 import requests
 from app.celery_app import celery_app
 
-# ========== PROTEIN STRUCTURE PREDICTION TASK ==========
-
 @celery_app.task(name="app.tasks.predict_esmfold")
 def predict_esmfold(sequence: str):
     """
@@ -48,8 +46,6 @@ def predict_esmfold(sequence: str):
             "model": "esmfold"
         }
 
-
-# ========== LEGACY TASK (for backward compatibility) ==========
 
 @celery_app.task(name="app.tasks.predict_structure_task")
 def predict_structure_task(sequence: str):

@@ -85,7 +85,7 @@ class ProcessingAgentSpade(BaseAgent):
 		for line in pdb_text.splitlines():
 			if line.startswith("ATOM") and len(line) >= 66:
 				atom_name = line[12:16].strip()
-				if atom_name == "CA":  # Only CA atoms
+				if atom_name == "CA":
 					try:
 						bfactor = float(line[60:66].strip())
 						values.append(bfactor)

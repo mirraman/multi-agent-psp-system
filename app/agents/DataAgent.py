@@ -92,33 +92,6 @@ class DataAgentSpade(BaseAgent):
 			"pubmed": pubmed_data,
 		}
 
-	def _parse_fasta(self, fasta_content: str) -> Dict[str, Any]:
-		lines = fasta_content.strip().split("\n")
-		header = ""
-		sequence_parts = []
-
-		for line in lines:
-			if line.startswith(">"):
-				header = line[1:].strip()
-			else:
-				sequence_parts.append(line.strip())
-
-		sequence = "".join(sequence_parts)
-
-		return {
-			"accession": header or "fasta_input",
-			"uniprot": {
-				"name": header,
-				"sequence": sequence,
-				"pdb_ids": [],
-				"alphafold_links": [],
-			},
-			"pdb": [],
-			"alphafold": {},
-			"pubmed": None,
-		}
-
-
 class MessageHandlerBehaviour(CyclicBehaviour):
 	def __init__(self, agent):
 		super().__init__()

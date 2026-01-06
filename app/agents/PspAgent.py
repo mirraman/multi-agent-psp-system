@@ -26,7 +26,6 @@ class PspAgent(BaseAgent):
 		
 		print(f"[{job_id}] PspAgent: Launching ESMFold prediction...")
 		
-		# Launch ESMFold task
 		task_esm = predict_esmfold.delay(sequence)
 		self.pending_tasks[job_id] = task_esm.id
 		
