@@ -91,6 +91,10 @@ class OutputAgentSpade(BaseAgent):
 		if best_model == "alphafold_db":
 			pdb_text = alphafold_data.get("pdb_text", "")
 			source_display = "AlphaFold DB"
+		elif best_model == "colabfold_modal":
+			modal_data = psp_results.get("colabfold_modal", {})
+			pdb_text = modal_data.get("pdb", "")
+			source_display = "AlphaFold Cloud (Modal)"
 		else:
 			esmfold_data = psp_results.get("esmfold", {})
 			pdb_text = esmfold_data.get("pdb", "")

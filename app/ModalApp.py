@@ -1,7 +1,7 @@
 import modal
 import os
 
-app = modal.app("psp-colabfold-worker")
+app = modal.App("psp-colabfold-worker")
 
 image = (
 	modal.Image.from_registry("ghcr.io/colabfold/colabfold:latest")
@@ -11,7 +11,7 @@ image = (
 )
 
 @app.function(image=image, gpu="T4", timeout=600)
-def predict_structure_remote(sequnece: str, job_id: str):
+def predict_structure_remote(sequence: str, job_id: str):
 	import os
 	import tempfile
 	from colabfold.batch import get_queries, run, set_model_weights
@@ -32,7 +32,7 @@ def predict_structure_remote(sequnece: str, job_id: str):
 			queries=queries,
 			result_dir=tmp_dir,
 			use_templates=False,
-			model_order=single_sequence,
+			model_order="single_sequence",
 			model_type="auto",
 			num_models=1,
 			num_recycles=1,

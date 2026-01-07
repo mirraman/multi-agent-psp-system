@@ -16,6 +16,7 @@ class CoordinatorAgent(BaseAgent):
 		self.processing_agent_jid = "processing_agent@localhost"
 		self.synthesis_agent_jid = "synthesis_agent@localhost"
 		self.output_agent_jid = "output_agent@localhost"
+		self.modal_agent_jid = "modal_agent@localhost"
 
 	async def start_job(self, input_type: str, input_value: str, db_job_id: str = None, options: dict = None): 
 		job_id = db_job_id or str(uuid.uuid4())
@@ -63,20 +64,34 @@ class CoordinatorAgent(BaseAgent):
 		if not job:
 			print(f"Job {job_id} not found")
 			return
-		
+
 		if action == "data_fetched":
+			print(f"[{job_id}] Data collection complete! Moving to prediction")
 			job["raw_data"] = agent_msg.payload.get("data")
 			job["status"] = "predicting_structure"
 
 			sequence = job["raw_data"].get("uniprot", {}).get("sequence", "")
-			msg = self.create_message(
-				to=self.psp_agent_jid,
-				msg_type="request",
-				action="predict_structure",
-				payload={"sequence": sequence},
-				job_id=job_id,
-			)
-			await self.send(msg)
+
+			if len(sequence) > 400:
+				print(f"[{job_id}] Sequence length {len(sequence)} > 400. Routing to Modal Agent (ColabFold).")
+				msg = self.create_message(
+					to=self.modal_agent_jid,
+					msg_type="request",
+					action="predict_colabfold_modal",
+					payload={"sequence": sequence},
+					job_id=job_id,
+				)
+				await self.send(msg)
+			else: 
+				print(f"[{job_id}] Sequence length {len(sequence)} <= 400. Routing to PSP Agent (ESMFold).")
+				msg = self.create_message(
+					to=self.psp_agent_jid,
+					msg_type="request",
+					action="predict_structure",
+					payload={"sequence": sequence},
+					job_id=job_id,
+				)
+				await self.send(msg)
 		elif action == "structure_predicted":
 			job["psp_results"] = agent_msg.payload.get("results", {})
 			job["models_used"] = agent_msg.payload.get("models_used", [])

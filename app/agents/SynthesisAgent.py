@@ -64,7 +64,12 @@ class SynthesisAgent(BaseAgent):
 		pdb_count = processing_results.get("pdb_count", 0)
 		best_resolution = processing_results.get("pdb_best_resolution")
 		
+		modal_data = psp_results.get("colabfold_modal", {})
+		has_modal = bool(modal_data.get("pdb"))
+
 		available = []
+		if has_modal:
+			available.append("AlphaFold Modal (ColabFold)")
 		if esmfold_plddt:
 			available.append(f"ESMFold (pLDDT: {esmfold_plddt:.1f})")
 		if alphafold_db_conf:
@@ -77,7 +82,14 @@ class SynthesisAgent(BaseAgent):
 		has_esmfold = esmfold_plddt is not None
 		has_alphafold_db = alphafold_db_conf is not None
 		
-		if has_esmfold and has_alphafold_db:
+		if has_modal:
+			synthesis["best_model"] = "colabfold_modal"
+			synthesis["best_model_source"] = "AlphaFold Cloud (Modal)"
+			synthesis["confidence_score"] = "High (Computed)"
+			synthesis["summary"] = "Using fresh AlphaFold prediction from Modal Cloud (ColabFold). Prioritized for accuracy on large/complex protein."
+			synthesis["scenario"] = "modal_success"
+		
+		elif has_esmfold and has_alphafold_db:
 			synthesis["scenario"] = "both_success"
 			if esmfold_plddt > 70:
 				synthesis["best_model"] = "esmfold"
