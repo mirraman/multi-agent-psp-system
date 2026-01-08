@@ -5,7 +5,7 @@ from app.agents.BaseAgent import BaseAgent
 from spade.behaviour import CyclicBehaviour
 
 
-class ProcessingAgentSpade(BaseAgent):
+class ProcessingAgent(BaseAgent):
 	def __init__(self, jid: str, password: str):
 		super().__init__(jid, password)
 		self.coordinator_jid = "coordinator@localhost"
@@ -13,7 +13,7 @@ class ProcessingAgentSpade(BaseAgent):
 	async def setup(self):
 		behaviour = MessageHandlerBehaviour(self)
 		self.add_behaviour(behaviour)
-		print(f"ProcessingAgentSpade {self.jid} started")
+		print(f"ProcessingAgent {self.jid} started")
 
 	async def handle_process(self, agent_msg):
 		job_id = agent_msg.job_id

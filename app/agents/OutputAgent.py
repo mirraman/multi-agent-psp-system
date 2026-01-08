@@ -7,7 +7,7 @@ from app.agents.BaseAgent import BaseAgent
 from spade.behaviour import CyclicBehaviour
 
 
-class OutputAgentSpade(BaseAgent):
+class OutputAgent(BaseAgent):
 	def __init__(self, jid: str, password: str):
 		super().__init__(jid, password)
 		self.coordinator_jid = "coordinator@localhost"
@@ -17,7 +17,7 @@ class OutputAgentSpade(BaseAgent):
 		behaviour = MessageHandlerBehaviour(self)
 		self.add_behaviour(behaviour)
 		os.makedirs(self.output_dir, exist_ok=True)
-		print(f"OutputAgentSpade {self.jid} started")
+		print(f"OutputAgent {self.jid} started")
 
 	async def handle_generate_output(self, agent_msg):
 		job_id = agent_msg.job_id

@@ -1,7 +1,7 @@
 from typing import Dict
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from app.agents.BaseAgent import BaseAgent
-from app.ModalApp import predict_structure_remote
+import modal
 import asyncio
 
 class ModalAgent(BaseAgent):
@@ -19,10 +19,11 @@ class ModalAgent(BaseAgent):
 		job_id = msg.job_id
 		sequence = msg.payload.get("sequence")
 		
-		print(f"[{job_id}] ModalAgent: Spawning remote AlphaFold job...")
+		print(f"[{job_id}] ModalAgent: Spawning remote ColabFold job...")
 		
 		try:
-			function_call = predict_structure_remote.spawn(sequence, job_id)
+			remote_func = modal.Function.from_name("psp-colabfold-worker", "predict_structure_remote")
+			function_call = remote_func.spawn(sequence, job_id)
 			
 			self.active_calls[job_id] = function_call
 			print(f"[{job_id}] Started Modal Job ID: {function_call.object_id}")
@@ -40,7 +41,7 @@ class MessageHandlerBehaviour(CyclicBehaviour):
 		msg = await self.receive(timeout=10)
 		if msg:
 			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "predict_alphafold_modal":
+			if agent_msg.action == "predict_colabfold_modal":
 				await self.agent.handle_predict(agent_msg)
 
 class CheckModalJobsBehaviour(PeriodicBehaviour):

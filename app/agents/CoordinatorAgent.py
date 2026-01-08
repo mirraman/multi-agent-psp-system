@@ -72,7 +72,8 @@ class CoordinatorAgent(BaseAgent):
 
 			sequence = job["raw_data"].get("uniprot", {}).get("sequence", "")
 
-			if len(sequence) > 400:
+			# TEST MODE: Force Modal for everything > 0 then to change to 400
+			if len(sequence) > 0:
 				print(f"[{job_id}] Sequence length {len(sequence)} > 400. Routing to Modal Agent (ColabFold).")
 				msg = self.create_message(
 					to=self.modal_agent_jid,

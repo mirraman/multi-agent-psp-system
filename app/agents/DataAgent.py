@@ -4,7 +4,7 @@ from spade.behaviour import CyclicBehaviour
 from typing import Any, Dict, List
 
 
-class DataAgentSpade(BaseAgent):
+class DataAgent(BaseAgent):
 	def __init__(self, jid: str, password: str):
 		super().__init__(jid, password)
 		self.coordinator_jid = "coordinator@localhost"
@@ -12,7 +12,7 @@ class DataAgentSpade(BaseAgent):
 	async def setup(self):
 		behaviour = MessageHandlerBehaviour(self)
 		self.add_behaviour(behaviour)
-		print(f"DataAgentSpade {self.jid} started")
+		print(f"DataAgent {self.jid} started")
 
 	async def handle_fetch_data(self, agent_msg):
 		job_id = agent_msg.job_id

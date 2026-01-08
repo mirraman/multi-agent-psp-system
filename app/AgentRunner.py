@@ -3,22 +3,24 @@ import os
 import spade
 
 from app.agents.CoordinatorAgent import CoordinatorAgent
-from app.agents.DataAgentSpade import DataAgentSpade
+from app.agents.DataAgent import DataAgent
 from app.agents.PspAgent import PspAgent
-from app.agents.ProcessingAgentSpade import ProcessingAgentSpade
+from app.agents.ProcessingAgent import ProcessingAgent
 from app.agents.SynthesisAgent import SynthesisAgent
-from app.agents.OutputAgentSpade import OutputAgentSpade
+from app.agents.OutputAgent import OutputAgent
+from app.agents.ModalAgent import ModalAgent
 from app.utils.db import MongoConnection
 
 PASSWORD = "secret123"
 
 AGENTS = [
     ("coordinator@localhost", CoordinatorAgent),
-    ("data_agent@localhost", DataAgentSpade),
+    ("data_agent@localhost", DataAgent),
     ("psp_agent@localhost", PspAgent),
-    ("processing_agent@localhost", ProcessingAgentSpade),
+    ("processing_agent@localhost", ProcessingAgent),
     ("synthesis_agent@localhost", SynthesisAgent),
-    ("output_agent@localhost", OutputAgentSpade),
+    ("output_agent@localhost", OutputAgent),
+    ("modal_agent@localhost", ModalAgent),
 ]
 
 
