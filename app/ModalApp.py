@@ -88,7 +88,7 @@ def predict_structure_remote(sequence: str, job_id: str):
                 data_dir=Path(CACHE_DIR),
                 use_templates=False,
                 num_models=1,     
-                num_recycles=1,   
+                num_recycles=3,  
                 model_type="alphafold2_ptm",
             )
 
