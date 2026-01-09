@@ -65,7 +65,7 @@ class OutputAgent(BaseAgent):
 		with open(json_path, "w") as f:
 			json.dump(output_doc, f, indent=2)
 
-		pdb_text = psp_results.get("pdb", "")
+		pdb_text = psp_results.get("esmfold", {}).get("pdb", "")
 		if pdb_text:
 			pdb_path = os.path.join(self.output_dir, f"{accession}_esmfold.pdb")
 			with open(pdb_path, "w") as f:

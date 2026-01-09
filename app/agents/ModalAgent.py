@@ -3,6 +3,7 @@ from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from app.agents.BaseAgent import BaseAgent
 import modal
 import asyncio
+import concurrent.futures
 
 class ModalAgent(BaseAgent):
 	def __init__(self, jid: str, password: str):
@@ -88,7 +89,7 @@ class CheckModalJobsBehaviour(PeriodicBehaviour):
 				
 				del self.agent.active_calls[job_id]
 				
-			except TimeoutError:
+			except concurrent.futures.TimeoutError:
 				pass
 			except Exception as e:
 				print(f"[{job_id}] Error checking Modal status: {e}")
