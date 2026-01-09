@@ -55,10 +55,18 @@ class CheckCeleryTasksBehaviour(PeriodicBehaviour):
 			
 			if async_result.ready():
 				print(f"[{job_id}] PspAgent: ESMFold task finished!")
-				
-				result_data = async_result.result
+
+				try:
+					result_data = async_result.result
+				except Exception as e:
+					print(f"[{job_id}] Celery task raised an exception: {e}")
+					result_data = {
+						"status": "failed",
+						"error": str(e),
+					}
+
 				del self.agent.pending_tasks[job_id]
-				
+					
 				if result_data.get("status") == "success":
 					payload = {
 						"results": {
