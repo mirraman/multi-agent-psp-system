@@ -93,4 +93,20 @@ class CheckModalJobsBehaviour(PeriodicBehaviour):
 				pass
 			except Exception as e:
 				print(f"[{job_id}] Error checking Modal status: {e}")
+				
+				payload = {
+					"results": {},
+					"models_used": [],
+					"errors": {"colabfold_modal": str(e)}
+				}
+				
+				msg = self.agent.create_message(
+					to=self.agent.coordinator_jid,
+					msg_type="response",
+					action="structure_predicted", 
+					payload=payload,
+					job_id=job_id
+				)
+				await self.agent.send(msg)
+				
 				del self.agent.active_calls[job_id]

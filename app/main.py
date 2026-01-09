@@ -36,11 +36,14 @@ async def submit_job(input_value: str) -> Dict[str, str]:
     if MongoConnection.db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     
+    if not input_value or not input_value.strip():
+        raise HTTPException(status_code=400, detail="Input cannot be empty")
+
     # Auto-detect input type
     # If starts with '>' or contains only amino acid letters, it's FASTA
     # Otherwise, assume it's an accession ID
     input_type = "fasta" if (input_value.startswith(">") or 
-                             all(c in "ACDEFGHIKLMNPQRSTVWY" for c in input_value.upper())) else "accession"
+                             (input_value and all(c in "ACDEFGHIKLMNPQRSTVWY" for c in input_value.upper()))) else "accession"
     
     task_doc = {
         "type": "protein_structure_pipeline",
