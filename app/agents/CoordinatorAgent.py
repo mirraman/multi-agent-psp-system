@@ -16,6 +16,7 @@ class CoordinatorAgent(BaseAgent):
 		self.processing_agent_jid = "processing_agent@localhost"
 		self.synthesis_agent_jid = "synthesis_agent@localhost"
 		self.output_agent_jid = "output_agent@localhost"
+		self.analysis_agent_jid = "analysis_agent@localhost"
 		self.modal_agent_jid = "modal_agent@localhost"
 
 	async def start_job(self, input_type: str, input_value: str, db_job_id: str = None, options: dict = None): 
@@ -29,6 +30,7 @@ class CoordinatorAgent(BaseAgent):
 			"raw_data": None,
 			"psp_results": None,
 			"processing_results": None,
+			"analysis_results": None,
 			"synthesis_results": None,
 			"output_results": None,
 			"db_job_id": db_job_id,  
@@ -117,7 +119,24 @@ class CoordinatorAgent(BaseAgent):
 
 		elif action == "processed":
 			job["processing_results"] = agent_msg.payload.get("metrics")
+			job["status"] = "analyzing"
+			msg = self.create_message(
+				to=self.analysis_agent_jid,
+				msg_type="request",
+				action="analyze",
+				payload={
+					"raw_data": job["raw_data"],
+					"psp_results": job["psp_results"],
+					"processing_results": job["processing_results"],
+				},
+				job_id=job_id,
+			)
+			await self.send(msg)
+
+		elif action == "analyzed":
+			job["analysis_results"] = agent_msg.payload.get("analysis")
 			job["status"] = "synthesizing"
+			print(f"[{job_id}] Analysis complete: {job['analysis_results'].get('summary', '')}")
 			msg = self.create_message(
 				to=self.synthesis_agent_jid,
 				msg_type="request",
@@ -126,6 +145,7 @@ class CoordinatorAgent(BaseAgent):
 					"raw_data": job["raw_data"],
 					"psp_results": job["psp_results"],
 					"processing_results": job["processing_results"],
+					"analysis_results": job["analysis_results"],
 				},
 				job_id=job_id,
 			)
@@ -145,6 +165,7 @@ class CoordinatorAgent(BaseAgent):
 					"psp_results": job["psp_results"],
 					"processing_results": job["processing_results"],
 					"synthesis_results": job["synthesis_results"],
+					"analysis_results": job["analysis_results"],
 				},
 				job_id=job_id,
 			)
@@ -177,7 +198,8 @@ class CoordinatorAgent(BaseAgent):
 					"uniprot": job["raw_data"].get("uniprot"),
 					"psp_results": job.get("psp_results"),  
 					"models_used": job.get("models_used", []),
-					"psp_errors": job.get("psp_errors", {})
+					"psp_errors": job.get("psp_errors", {}),
+					"analysis": job.get("analysis_results")
 				}
 				await MongoConnection.db.protein_results.update_one(
 					{"accession": job["input_value"]},

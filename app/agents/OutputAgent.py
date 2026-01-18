@@ -26,9 +26,10 @@ class OutputAgent(BaseAgent):
 		psp_results = agent_msg.payload.get("psp_results", {})
 		processing_results = agent_msg.payload.get("processing_results", {})
 		synthesis_results = agent_msg.payload.get("synthesis_results", {})
+		analysis_results = agent_msg.payload.get("analysis_results", {})
 
 		output_path = self._generate_output(
-			accession, raw_data, psp_results, processing_results, synthesis_results
+			accession, raw_data, psp_results, processing_results, synthesis_results, analysis_results
 		)
 
 		msg = self.create_message(
@@ -47,6 +48,7 @@ class OutputAgent(BaseAgent):
 		psp_results: Dict[str, Any],
 		processing_results: Dict[str, Any],
 		synthesis_results: Dict[str, Any],
+		analysis_results: Dict[str, Any],
 	) -> str:
 		timestamp = datetime.now(UTC).isoformat()
 
@@ -59,6 +61,7 @@ class OutputAgent(BaseAgent):
 			"esmfold": psp_results,
 			"metrics": processing_results,
 			"synthesis": synthesis_results,
+			"analysis": analysis_results,
 		}
 
 		json_path = os.path.join(self.output_dir, f"{accession}.json")
@@ -81,6 +84,7 @@ class OutputAgent(BaseAgent):
 		uniprot = output_doc.get("uniprot") or {}
 		metrics = output_doc.get("metrics") or {}
 		synthesis = output_doc.get("synthesis") or {}
+		analysis = output_doc.get("analysis") or {}
 		psp_results = output_doc.get("esmfold") or {}
 		alphafold_data = output_doc.get("alphafold") or {}
 
@@ -104,6 +108,20 @@ class OutputAgent(BaseAgent):
 		
 		esmfold_plddt = metrics.get("esmfold_plddt_mean")
 		esmfold_plddt_str = f"{esmfold_plddt:.2f}" if isinstance(esmfold_plddt, (int, float)) else "N/A"
+
+		models_compared = analysis.get("models_compared", [])
+		pairwise_rmsd = analysis.get("pairwise_rmsd", {})
+		consensus_conf = analysis.get("consensus_confidence")
+		has_consensus = analysis.get("has_consensus", False)
+		analysis_summary = analysis.get("summary", "No structural comparison performed.")
+		
+		rmsd_rows = ""
+		for pair, rmsd_val in pairwise_rmsd.items():
+			pair_display = pair.replace("_vs_", " vs ")
+			rmsd_rows += f'<div class="metric"><span>{pair_display}</span><span class="metric-value">{rmsd_val} A</span></div>'
+		
+		consensus_str = f"{consensus_conf:.2f}" if isinstance(consensus_conf, (int, float)) else "N/A"
+		consensus_status = "Yes" if has_consensus else "No"
 
 		html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -205,6 +223,26 @@ class OutputAgent(BaseAgent):
                 </div>
                 <div class="summary">
                     {synthesis.get('summary', 'No summary available.')}
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <h2>Ensemble Analysis</h2>
+                <div class="metric">
+                    <span>Models Compared</span>
+                    <span class="metric-value">{', '.join(models_compared) if models_compared else 'N/A'}</span>
+                </div>
+                <div class="metric">
+                    <span>Consensus Reached</span>
+                    <span class="metric-value">{consensus_status}</span>
+                </div>
+                <div class="metric">
+                    <span>Consensus Confidence</span>
+                    <span class="metric-value">{consensus_str}</span>
+                </div>
+                {rmsd_rows}
+                <div class="summary">
+                    {analysis_summary}
                 </div>
             </div>
 

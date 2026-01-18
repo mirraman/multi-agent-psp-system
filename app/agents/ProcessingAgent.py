@@ -92,7 +92,10 @@ class ProcessingAgent(BaseAgent):
 					except ValueError:
 						continue
 		if values:
-			return sum(values) / len(values)
+			avg = sum(values) / len(values)
+			if avg < 1.5:
+				avg = avg * 100
+			return avg
 		return None
 
 
