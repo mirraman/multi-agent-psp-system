@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from app.agents.BaseAgent import BaseAgent, AgentMessage
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
-from app.utils.db import MongoConnection
+from app.utils.db import DatabaseConnection, update_task, upsert_protein_result, claim_pending_job
 
 class CoordinatorAgent(BaseAgent):
 	def __init__(self, jid: str, password: str):
@@ -217,13 +217,12 @@ class CoordinatorAgent(BaseAgent):
 			print(f"Job {job_id} completed: {job['output_results']}")
 			
 			db_job_id = job.get("db_job_id")
-			if MongoConnection.db is not None:
+			if DatabaseConnection.engine is not None:
 				if db_job_id:
 					try:
-						from bson import ObjectId
-						await MongoConnection.db.tasks.update_one(
-							{"_id": ObjectId(db_job_id)},
-							{"$set": {"status": "completed", "output_path": job["output_results"]}}
+						await update_task(
+							db_job_id,
+							{"status": "completed", "output_path": job["output_results"]}
 						)
 					except Exception as e:
 						print(f"Failed to update task status: {e}")
@@ -236,18 +235,17 @@ class CoordinatorAgent(BaseAgent):
 					"metrics": job.get("processing_results"),
 					"synthesis": job.get("synthesis_results"),
 					"uniprot": job["raw_data"].get("uniprot"),
-					"psp_results": job.get("psp_results"),  
+					"psp_results": job.get("psp_results"),
 					"models_used": job.get("models_used", []),
 					"psp_errors": job.get("psp_errors", {}),
 					"analysis": job.get("analysis_results"),
 					"pockets": job.get("pocket_results"),
 				}
-				await MongoConnection.db.protein_results.update_one(
-					{"accession": job["input_value"]},
-					{"$set": final_output},
-					upsert=True
-				)
-				print(f"Saved final results to DB for {job['input_value']}")
+				try:
+					await upsert_protein_result(job["input_value"], final_output)
+					print(f"Saved final results to DB for {job['input_value']}")
+				except Exception as e:
+					print(f"Failed to save protein result: {e}")
 
 
 class MessageHandlerBehaviour(CyclicBehaviour):
@@ -263,22 +261,23 @@ class MessageHandlerBehaviour(CyclicBehaviour):
 
 class CheckDatabaseForJobsBehaviour(PeriodicBehaviour):
 	async def run(self):
-		if MongoConnection.db is None:
+		if DatabaseConnection.engine is None:
 			return
-			
-		pending_job = await MongoConnection.db.tasks.find_one_and_update(
-			{"status": "pending"},
-			{"$set": {"status": "processing"}}
-		)
+		
+		try:
+			pending_job = await claim_pending_job()
+		except Exception as e:
+			print(f"DB poll error: {e}")
+			return
 		
 		if pending_job:
 			accession = pending_job.get("input_value")
 			input_type = pending_job.get("input_type", "accession")
-			db_job_id = str(pending_job["_id"])
+			db_job_id = str(pending_job["id"])
 			print(f"Coordinator: Picked up job {db_job_id} for {accession} ({input_type})")
 			
 			await self.agent.start_job(
-				input_type=input_type, 
+				input_type=input_type,
 				input_value=accession,
 				db_job_id=db_job_id
 			)
