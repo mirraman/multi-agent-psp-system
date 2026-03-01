@@ -17,16 +17,20 @@ services:
     networks:
       - psp-network
 
-  mongo:
-    image: mongo:7
-    container_name: psp-mongo
+  postgres:
+    image: postgres:16
+    container_name: psp-postgres
     ports:
-      - "27017:27017"
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: psp
+      POSTGRES_PASSWORD: psp
+      POSTGRES_DB: psp_db
     volumes:
-      - mongo-data:/data/db
+      - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U psp -d psp_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,13 +47,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017
+      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./app:/app/app          # live reload for development
       - ./data:/app/data
     depends_on:
-      mongo:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -64,13 +68,13 @@ services:
     container_name: psp-agents
     command: python -m app.AgentRunner
     environment:
-      - MONGODB_URI=mongodb://mongo:27017
+      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./app:/app/app          # live reload for development
       - ./data:/app/data
     depends_on:
-      mongo:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -84,7 +88,7 @@ services:
       dockerfile: Dockerfile.celery
     container_name: psp-celery
     environment:
-      - MONGODB_URI=mongodb://mongo:27017
+      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./app:/app/app
@@ -96,7 +100,7 @@ services:
       - psp-network
 
 volumes:
-  mongo-data:
+  postgres-data:
 
 networks:
   psp-network:
