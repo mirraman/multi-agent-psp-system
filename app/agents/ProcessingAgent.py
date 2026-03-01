@@ -72,31 +72,57 @@ class ProcessingAgent(BaseAgent):
 				pdb_text = esmfold_data.get("pdb", "")
 				if pdb_text:
 					results["esmfold_predicted"] = True
-					plddt = self._extract_plddt_from_pdb(pdb_text)
-					if plddt:
-						results["esmfold_plddt_mean"] = plddt
+					plddt_mean, plddt_per_residue = self._extract_plddt_from_pdb(pdb_text)
+					if plddt_mean is not None:
+						results["esmfold_plddt_mean"] = plddt_mean
+					if plddt_per_residue:
+						# Store with string keys for JSON serialisation
+						results["plddt_per_residue"] = {
+							str(k): v for k, v in plddt_per_residue.items()
+						}
+			# Also capture ColabFold/Modal pLDDT if available
+			modal_data = psp_results.get("colabfold_modal", {})
+			modal_pdb = modal_data.get("pdb", "")
+			if modal_pdb and "plddt_per_residue" not in results:
+				plddt_mean, plddt_per_residue = self._extract_plddt_from_pdb(modal_pdb)
+				if plddt_mean is not None:
+					results["modal_plddt_mean"] = plddt_mean
+				if plddt_per_residue:
+					results["plddt_per_residue"] = {
+						str(k): v for k, v in plddt_per_residue.items()
+					}
 		else:
 			results["esmfold_predicted"] = False
 
 		return results
 
-	def _extract_plddt_from_pdb(self, pdb_text: str) -> float | None:
-		values = []
+	def _extract_plddt_from_pdb(self, pdb_text: str) -> tuple[float | None, dict[int, float]]:
+		"""
+		Parse pLDDT scores from the B-factor column of CA atoms in a PDB string.
+
+		Returns:
+			(mean_plddt, per_residue_dict)
+			- mean_plddt: float average over all CA atoms, or None if no ATOM records found
+			- per_residue_dict: mapping of residue_number (int) -> pLDDT (float, 0-100 scale)
+		"""
+		per_residue: dict[int, float] = {}
 		for line in pdb_text.splitlines():
 			if line.startswith("ATOM") and len(line) >= 66:
 				atom_name = line[12:16].strip()
 				if atom_name == "CA":
 					try:
+						res_num = int(line[22:26].strip())
 						bfactor = float(line[60:66].strip())
-						values.append(bfactor)
+						# Normalise to 0-100 scale if stored as 0-1
+						if bfactor < 1.5:
+							bfactor = bfactor * 100
+						per_residue[res_num] = bfactor
 					except ValueError:
 						continue
-		if values:
-			avg = sum(values) / len(values)
-			if avg < 1.5:
-				avg = avg * 100
-			return avg
-		return None
+		if per_residue:
+			avg = sum(per_residue.values()) / len(per_residue)
+			return avg, per_residue
+		return None, {}
 
 
 class MessageHandlerBehaviour(CyclicBehaviour):
