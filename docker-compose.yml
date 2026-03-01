@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
   redis:
     image: redis:7
     container_name: psp-redis
@@ -8,3 +9,95 @@ services:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - psp-network
+
+  mongo:
+    image: mongo:7
+    container_name: psp-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - psp-network
+
+  # ── Application Services ────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: psp-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app          # live reload for development
+      - ./data:/app/data
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+  agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: psp-agents
+    command: python -m app.AgentRunner
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app          # live reload for development
+      - ./data:/app/data
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: psp-celery
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+volumes:
+  mongo-data:
+
+networks:
+  psp-network:
+    driver: bridge
