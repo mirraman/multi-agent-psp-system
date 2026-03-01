@@ -15,6 +15,7 @@ class CoordinatorAgent(BaseAgent):
 		self.psp_agent_jid = "psp_agent@localhost"
 		self.processing_agent_jid = "processing_agent@localhost"
 		self.synthesis_agent_jid = "synthesis_agent@localhost"
+		self.pocket_agent_jid = "pocket_agent@localhost"
 		self.output_agent_jid = "output_agent@localhost"
 		self.analysis_agent_jid = "analysis_agent@localhost"
 		self.modal_agent_jid = "modal_agent@localhost"
@@ -32,8 +33,9 @@ class CoordinatorAgent(BaseAgent):
 			"processing_results": None,
 			"analysis_results": None,
 			"synthesis_results": None,
+			"pocket_results": None,
 			"output_results": None,
-			"db_job_id": db_job_id,  
+			"db_job_id": db_job_id,
 		}
 
 		msg = self.create_message(
@@ -153,7 +155,44 @@ class CoordinatorAgent(BaseAgent):
 
 		elif action == "synthesized":
 			job["synthesis_results"] = agent_msg.payload.get("synthesis")
+			job["status"] = "detecting_pockets"
+
+			# Determine which PDB to send for pocket detection
+			best_model = job["synthesis_results"].get("best_model", "esmfold")
+			psp_results = job.get("psp_results", {})
+			raw_data = job.get("raw_data", {})
+
+			pdb_text = ""
+			if best_model == "colabfold_modal":
+				pdb_text = psp_results.get("colabfold_modal", {}).get("pdb", "")
+			elif best_model == "alphafold_db":
+				pdb_text = raw_data.get("alphafold", {}).get("pdb_text", "")
+			else:
+				pdb_text = psp_results.get("esmfold", {}).get("pdb", "")
+
+			plddt_per_residue = (job.get("processing_results") or {}).get(
+				"plddt_per_residue", {}
+			)
+
+			print(f"[{job_id}] Synthesis complete. Dispatching pocket detection on {best_model} structure.")
+			msg = self.create_message(
+				to=self.pocket_agent_jid,
+				msg_type="request",
+				action="detect_pockets",
+				payload={
+					"pdb_text": pdb_text,
+					"plddt_per_residue": plddt_per_residue,
+					"best_model_source": job["synthesis_results"].get("best_model_source", best_model),
+				},
+				job_id=job_id,
+			)
+			await self.send(msg)
+
+		elif action == "pockets_detected":
+			job["pocket_results"] = agent_msg.payload
 			job["status"] = "generating_output"
+			pocket_count = agent_msg.payload.get("pocket_summary", {}).get("high_confidence", 0)
+			print(f"[{job_id}] Pocket detection complete: {pocket_count} high-confidence pockets. Generating output.")
 			accession = job["input_value"] if job["input_type"] == "accession" else job_id
 			msg = self.create_message(
 				to=self.output_agent_jid,
@@ -166,6 +205,7 @@ class CoordinatorAgent(BaseAgent):
 					"processing_results": job["processing_results"],
 					"synthesis_results": job["synthesis_results"],
 					"analysis_results": job["analysis_results"],
+					"pocket_results": job["pocket_results"],
 				},
 				job_id=job_id,
 			)
@@ -199,7 +239,8 @@ class CoordinatorAgent(BaseAgent):
 					"psp_results": job.get("psp_results"),  
 					"models_used": job.get("models_used", []),
 					"psp_errors": job.get("psp_errors", {}),
-					"analysis": job.get("analysis_results")
+					"analysis": job.get("analysis_results"),
+					"pockets": job.get("pocket_results"),
 				}
 				await MongoConnection.db.protein_results.update_one(
 					{"accession": job["input_value"]},

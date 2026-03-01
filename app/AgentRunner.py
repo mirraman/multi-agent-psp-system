@@ -10,6 +10,7 @@ from app.agents.SynthesisAgent import SynthesisAgent
 from app.agents.AnalysisAgent import AnalysisAgent
 from app.agents.OutputAgent import OutputAgent
 from app.agents.ModalAgent import ModalAgent
+from app.agents.PocketAgent import PocketAgent
 from app.utils.db import MongoConnection
 
 PASSWORD = "secret123"
@@ -21,6 +22,7 @@ AGENTS = [
     ("processing_agent@localhost", ProcessingAgent),
     ("analysis_agent@localhost", AnalysisAgent),
     ("synthesis_agent@localhost", SynthesisAgent),
+    ("pocket_agent@localhost", PocketAgent),
     ("output_agent@localhost", OutputAgent),
     ("modal_agent@localhost", ModalAgent),
 ]

@@ -27,9 +27,11 @@ class OutputAgent(BaseAgent):
 		processing_results = agent_msg.payload.get("processing_results", {})
 		synthesis_results = agent_msg.payload.get("synthesis_results", {})
 		analysis_results = agent_msg.payload.get("analysis_results", {})
+		pocket_results = agent_msg.payload.get("pocket_results") or {}
 
 		output_path = self._generate_output(
-			accession, raw_data, psp_results, processing_results, synthesis_results, analysis_results
+			accession, raw_data, psp_results, processing_results,
+			synthesis_results, analysis_results, pocket_results
 		)
 
 		msg = self.create_message(
@@ -49,6 +51,7 @@ class OutputAgent(BaseAgent):
 		processing_results: Dict[str, Any],
 		synthesis_results: Dict[str, Any],
 		analysis_results: Dict[str, Any],
+		pocket_results: Dict[str, Any] = None,
 	) -> str:
 		timestamp = datetime.now(UTC).isoformat()
 
@@ -62,6 +65,7 @@ class OutputAgent(BaseAgent):
 			"metrics": processing_results,
 			"synthesis": synthesis_results,
 			"analysis": analysis_results,
+			"pockets": pocket_results or {},
 		}
 
 		json_path = os.path.join(self.output_dir, f"{accession}.json")
@@ -87,6 +91,7 @@ class OutputAgent(BaseAgent):
 		analysis = output_doc.get("analysis") or {}
 		psp_results = output_doc.get("esmfold") or {}
 		alphafold_data = output_doc.get("alphafold") or {}
+		pockets = output_doc.get("pockets") or {}
 
 		best_model = synthesis.get("best_model", "esmfold")
 		pdb_text = ""
@@ -122,6 +127,58 @@ class OutputAgent(BaseAgent):
 		
 		consensus_str = f"{consensus_conf:.2f}" if isinstance(consensus_conf, (int, float)) else "N/A"
 		consensus_status = "Yes" if has_consensus else "No"
+
+		# ── Pocket html ───────────────────────────────────────────────────────
+		pocket_data = output_doc.get("pockets") or {}
+		pocket_list = pocket_data.get("pockets", [])
+		pocket_summary_data = pocket_data.get("pocket_summary", {})
+		total_pockets = pocket_summary_data.get("total_detected", 0)
+		high_conf_count = pocket_summary_data.get("high_confidence", 0)
+		filtered_count = pocket_summary_data.get("filtered_low_plddt", 0)
+
+		pocket_rows = ""
+		for p in pocket_list:
+			confident = p.get("confident", False)
+			badge_color = "#00ff88" if confident else "#ff9900"
+			badge_text = "&#10003; Confident" if confident else "&#9888; Low pLDDT"
+			res_count = len(p.get("residues", []))
+			pocket_rows += (
+				f'<tr>'
+				f'<td>#{p.get("rank", p.get("pocket_id", "?"))}</td>'
+				f'<td>{p.get("volume", 0):.1f} &#8491;&#179;</td>'
+				f'<td>{p.get("druggability_score", 0):.3f}</td>'
+				f'<td>{p.get("local_plddt_mean", 0):.1f}</td>'
+				f'<td>{p.get("composite_score", 0):.3f}</td>'
+				f'<td>{res_count}</td>'
+				f'<td><span style="color:{badge_color};font-weight:bold;">{badge_text}</span></td>'
+				f'</tr>'
+			)
+
+		filtered_note = (
+			f'<p style="color:#ff9900;margin-top:0.75rem;font-size:0.85rem;">'
+			f'&#9888; {filtered_count} pocket(s) filtered — local pLDDT below 70.</p>'
+		) if filtered_count > 0 else ""
+
+		if total_pockets > 0:
+			pocket_card_html = (
+				f'<div class="card full-width">'
+				f'<h2>&#128300; Binding Pockets ({high_conf_count} high-confidence of {total_pockets} detected)</h2>'
+				f'<table class="pocket-table">'
+				f'<thead><tr><th>Rank</th><th>Volume</th><th>Druggability</th>'
+				f'<th>Local pLDDT</th><th>Composite Score</th><th>Residues</th><th>Status</th></tr></thead>'
+				f'<tbody>{pocket_rows}</tbody>'
+				f'</table>'
+				f'{filtered_note}'
+				f'</div>'
+			)
+		else:
+			pocket_card_html = (
+				'<div class="card full-width">'
+				'<h2>&#128300; Binding Pockets</h2>'
+				'<p style="color:#888;padding:1rem 0;">No pockets detected — '
+				'fpocket may not be available in this environment, or the structure has no detectable binding sites.</p>'
+				'</div>'
+			)
 
 		html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -183,6 +240,25 @@ class OutputAgent(BaseAgent):
             border-radius: 0 8px 8px 0;
         }}
         .full-width {{ grid-column: 1 / -1; }}
+        .pocket-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }}
+        .pocket-table th {{
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 2px solid rgba(0,217,255,0.4);
+            color: #00d9ff;
+            font-weight: 600;
+        }}
+        .pocket-table td {{
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }}
+        .pocket-table tr:last-child td {{ border-bottom: none; }}
+        .pocket-table tr:hover td {{ background: rgba(255,255,255,0.04); }}
     </style>
 </head>
 <body>
@@ -245,6 +321,8 @@ class OutputAgent(BaseAgent):
                     {analysis_summary}
                 </div>
             </div>
+
+			{pocket_card_html}
 
             <div class="card full-width">
                 <h2>3D Structure ({source_display})</h2>
