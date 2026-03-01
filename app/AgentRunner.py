@@ -11,7 +11,7 @@ from app.agents.AnalysisAgent import AnalysisAgent
 from app.agents.OutputAgent import OutputAgent
 from app.agents.ModalAgent import ModalAgent
 from app.agents.PocketAgent import PocketAgent
-from app.utils.db import MongoConnection
+from app.utils.db import DatabaseConnection
 
 PASSWORD = "secret123"
 
@@ -29,12 +29,12 @@ AGENTS = [
 
 
 async def main():
-    mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://psp:psp@localhost:5432/psp_db")
     try:
-        await MongoConnection.init(mongo_uri)
-        print(f"Connected to MongoDB: {mongo_uri}")
+        await DatabaseConnection.init(database_url)
+        print(f"Connected to PostgreSQL: {database_url}")
     except Exception as e:
-        print(f"MongoDB connection failed: {e}")
+        print(f"PostgreSQL connection failed: {e}")
         print("Coordinator will not be able to poll for jobs from DB!")
 
     agents = []
@@ -58,7 +58,7 @@ async def main():
     for agent in agents:
         await agent.stop()
     
-    await MongoConnection.close()
+    await DatabaseConnection.close()
     print("Done!")
 
 

@@ -5,20 +5,20 @@ from fastapi import FastAPI, HTTPException
 from typing import Dict, Any
 from contextlib import asynccontextmanager
 
-from app.utils.db import MongoConnection, insert_task, get_protein_result
+from app.utils.db import DatabaseConnection, insert_task, get_protein_result
 
 logger = logging.getLogger("psp.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://psp:psp@localhost:5432/psp_db")
     try:
-        await MongoConnection.init(mongo_uri)
-        print("Connected to MongoDB via FastAPI")
+        await DatabaseConnection.init(database_url)
+        print("Connected to PostgreSQL via FastAPI")
     except Exception as e:
-        print(f"Failed to connect to Mongo: {e}")
+        print(f"Failed to connect to PostgreSQL: {e}")
     yield
-    await MongoConnection.close()
+    await DatabaseConnection.close()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -33,7 +33,7 @@ async def submit_job(input_value: str) -> Dict[str, str]:
     
     Auto-detects input type.
     """
-    if MongoConnection.db is None:
+    if DatabaseConnection.engine is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     
     if not input_value or not input_value.strip():
@@ -66,7 +66,7 @@ async def submit_job(input_value: str) -> Dict[str, str]:
 @app.get("/status/{accession}")
 async def get_status(accession: str) -> Dict[str, Any]:
    
-    if MongoConnection.db is None:
+    if DatabaseConnection.engine is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
         
     result = await get_protein_result(accession)
