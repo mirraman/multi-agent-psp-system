@@ -86,8 +86,89 @@ class CoordinatorAgent(BaseAgent):
 
         if action == "data_fetched":
             job["raw_data"] = agent_msg.payload.get("data")
+            raw_data = job.get("raw_data") or {}
+
+            # Disease flow: resolve disease -> ranked targets, then continue pipeline
+            # with the top actionable UniProt accession.
+            if job.get("input_type") == "disease":
+                if raw_data.get("error"):
+                    error_msg = f"Disease lookup failed: {raw_data['error']}"
+                    job["status"] = "failed"
+                    await self._log(job, error_msg, level="error")
+                    db_job_id = job.get("db_job_id")
+                    if DatabaseConnection.engine is not None and db_job_id:
+                        try:
+                            await fail_task(db_job_id, error_message=error_msg)
+                        except Exception as e:
+                            print(f"Failed to mark task failed: {e}")
+                    return
+
+                disease_context = raw_data.get("disease_context") or {}
+                targets = disease_context.get("targets", [])
+                if not targets:
+                    error_msg = "Disease lookup returned no actionable targets"
+                    job["status"] = "failed"
+                    await self._log(job, error_msg, level="error")
+                    db_job_id = job.get("db_job_id")
+                    if DatabaseConnection.engine is not None and db_job_id:
+                        try:
+                            await fail_task(db_job_id, error_message=error_msg)
+                        except Exception as e:
+                            print(f"Failed to mark task failed: {e}")
+                    return
+
+                selected_target = targets[0]
+                selected_accession = selected_target.get("accession")
+                if not selected_accession:
+                    error_msg = "Top disease target did not include a UniProt accession"
+                    job["status"] = "failed"
+                    await self._log(job, error_msg, level="error")
+                    db_job_id = job.get("db_job_id")
+                    if DatabaseConnection.engine is not None and db_job_id:
+                        try:
+                            await fail_task(db_job_id, error_message=error_msg)
+                        except Exception as e:
+                            print(f"Failed to mark task failed: {e}")
+                    return
+
+                job["disease_context"] = disease_context
+                job["selected_target"] = selected_target
+                await self._log(
+                    job,
+                    "Disease resolved to target "
+                    f"{selected_target.get('gene_symbol', '?')} ({selected_accession}), "
+                    f"score={selected_target.get('association_score', 'n/a')}. "
+                    "Continuing with standard protein pipeline."
+                )
+
+                # Switch the in-memory flow to a normal accession job and fetch
+                # canonical UniProt/PDB payload for the selected target.
+                job["input_type"] = "accession"
+                job["input_value"] = selected_accession
+                job["status"] = "fetching_data"
+                msg = self.create_message(
+                    to=self.data_agent_jid,
+                    msg_type="request",
+                    action="fetch_data",
+                    payload={"input_type": "accession", "input_value": selected_accession},
+                    job_id=job_id,
+                )
+                await self.send(msg)
+                return
+
             job["status"] = "predicting_structure"
-            sequence = job["raw_data"].get("uniprot", {}).get("sequence", "")
+            sequence = raw_data.get("uniprot", {}).get("sequence", "")
+            if not sequence:
+                error_msg = "No sequence available after data fetch"
+                job["status"] = "failed"
+                await self._log(job, error_msg, level="error")
+                db_job_id = job.get("db_job_id")
+                if DatabaseConnection.engine is not None and db_job_id:
+                    try:
+                        await fail_task(db_job_id, error_message=error_msg)
+                    except Exception as e:
+                        print(f"Failed to mark task failed: {e}")
+                return
             await self._log(job, f"Data fetched. Sequence length={len(sequence)}. Routing to structure predictor.")
 
             if len(sequence) > 400:
@@ -175,15 +256,10 @@ class CoordinatorAgent(BaseAgent):
 
             best_model = job["synthesis_results"].get("best_model", "esmfold")
             psp_results = job.get("psp_results", {})
-            raw_data = job.get("raw_data", {})
-
-            pdb_text = ""
-            if best_model == "colabfold_modal":
-                pdb_text = psp_results.get("colabfold_modal", {}).get("pdb", "")
-            elif best_model == "alphafold_db":
-                pdb_text = raw_data.get("alphafold", {}).get("pdb_text", "")
-            else:
-                pdb_text = psp_results.get("esmfold", {}).get("pdb", "")
+            model_payload = {
+                "esmfold": psp_results.get("esmfold", {}).get("pdb", ""),
+                "colabfold_modal": psp_results.get("colabfold_modal", {}).get("pdb", ""),
+            }
 
             plddt_per_residue = (job.get("processing_results") or {}).get("plddt_per_residue", {})
             await self._log(job, f"Synthesis complete. Best model: {best_model}. Running pocket detection.")
@@ -193,7 +269,8 @@ class CoordinatorAgent(BaseAgent):
                 msg_type="request",
                 action="detect_pockets",
                 payload={
-                    "pdb_text": pdb_text,
+                    "models": model_payload,
+                    "best_model": best_model,
                     "plddt_per_residue": plddt_per_residue,
                     "best_model_source": job["synthesis_results"].get("best_model_source", best_model),
                 },

@@ -67,6 +67,7 @@ class JobSubmitRequest(BaseModel):
     type: str = "protein_analysis"
     sequence: Optional[str] = None
     accession: Optional[str] = None
+    disease: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,10 @@ async def create_job(body: JobSubmitRequest) -> Dict[str, Any]:
     """
     _require_db()
 
-    if body.sequence:
+    if body.disease:
+        input_type = "disease"
+        input_value = body.disease.strip()
+    elif body.sequence:
         raw = body.sequence.strip()
         if raw.startswith(">"):
             # Single-entry FASTA — strip the header
@@ -105,7 +109,7 @@ async def create_job(body: JobSubmitRequest) -> Dict[str, Any]:
     else:
         raise HTTPException(
             status_code=400,
-            detail="Provide either 'sequence' (FASTA/amino-acids) or 'accession' (UniProt ID)",
+            detail="Provide one of 'disease', 'sequence' (FASTA/amino-acids), or 'accession' (UniProt ID)",
         )
 
     if not input_value:

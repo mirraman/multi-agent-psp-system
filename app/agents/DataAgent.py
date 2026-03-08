@@ -1,5 +1,6 @@
 from app.agents.BaseAgent import BaseAgent
 from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_pubmed
+from app.utils.open_targets import fetch_disease_targets
 from spade.behaviour import CyclicBehaviour
 from typing import Any, Dict, List
 
@@ -19,14 +20,16 @@ class DataAgent(BaseAgent):
 		input_type = agent_msg.payload.get("input_type", "accession")
 		input_value = agent_msg.payload.get("input_value")
 		include_pubmed = agent_msg.payload.get("include_pubmed", False)
-		
-		print(f"[{job_id}] DataAgent: fetching data for {input_type}: {input_value[:50]}...")
-		
+
+		print(f"[{job_id}] DataAgent: fetching data for {input_type}: {input_value[:80]}...")
+
 		if input_type == "fasta":
 			data = self._fetch_by_fasta(input_value)
+		elif input_type == "disease":
+			data = self._fetch_by_disease(input_value)
 		else:
 			data = self._fetch_by_accession(input_value, include_pubmed)
-		
+
 		msg = self.create_message(
 			to=self.coordinator_jid,
 			msg_type="response",
@@ -35,20 +38,17 @@ class DataAgent(BaseAgent):
 			job_id=job_id,
 		)
 		await self.send(msg)
-	
+
 	def _fetch_by_fasta(self, fasta_content: str) -> dict:
-		"""
-		Parse FASTA sequence directly without external API calls.
-		For FASTA input, we skip UniProt/PDB lookups.
-		"""
+		"""Parse FASTA sequence directly — no external API calls."""
 		lines = fasta_content.strip().split('\n')
 		if lines[0].startswith('>'):
-			header = lines[0][1:] 
+			header = lines[0][1:]
 			sequence = ''.join(lines[1:])
 		else:
 			header = "Custom sequence"
 			sequence = fasta_content.strip()
-		
+
 		return {
 			"uniprot": {
 				"name": header,
@@ -58,7 +58,35 @@ class DataAgent(BaseAgent):
 			"pdb": [],
 			"pubmed": []
 		}
-	
+
+	def _fetch_by_disease(self, disease_name: str) -> dict:
+		"""
+		Query Open Targets for disease-associated protein targets.
+		Returns disease context + ranked target list.
+		The CoordinatorAgent uses this to spawn per-protein sub-jobs.
+		"""
+		try:
+			result = fetch_disease_targets(disease_name, limit=5)
+			return {
+				"disease_context": {
+					"disease_id": result["disease_id"],
+					"disease_name": result["disease_name"],
+					"targets": result["targets"],
+				},
+				"uniprot": None,    # no single protein yet — coordinator spawns sub-jobs
+				"pdb": [],
+				"pubmed": [],
+			}
+		except RuntimeError as e:
+			# Return error payload — CoordinatorAgent will handle gracefully
+			return {
+				"disease_context": None,
+				"error": str(e),
+				"uniprot": None,
+				"pdb": [],
+				"pubmed": [],
+			}
+
 	def _fetch_by_accession(self, accession: str, include_pubmed: bool = False) -> Dict[str, Any]:
 		uniprot_data = fetch_uniprot(accession)
 
@@ -85,6 +113,7 @@ class DataAgent(BaseAgent):
 			"pdb": pdb_results,
 			"pubmed": pubmed_data,
 		}
+
 
 class MessageHandlerBehaviour(CyclicBehaviour):
 	def __init__(self, agent):
