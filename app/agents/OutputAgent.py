@@ -60,7 +60,6 @@ class OutputAgent(BaseAgent):
 			"timestamp": timestamp,
 			"uniprot": raw_data.get("uniprot"),
 			"pdb": raw_data.get("pdb"),
-			"alphafold": raw_data.get("alphafold"),
 			"esmfold": psp_results,
 			"metrics": processing_results,
 			"synthesis": synthesis_results,
@@ -90,20 +89,16 @@ class OutputAgent(BaseAgent):
 		synthesis = output_doc.get("synthesis") or {}
 		analysis = output_doc.get("analysis") or {}
 		psp_results = output_doc.get("esmfold") or {}
-		alphafold_data = output_doc.get("alphafold") or {}
 		pockets = output_doc.get("pockets") or {}
 
 		best_model = synthesis.get("best_model", "esmfold")
 		pdb_text = ""
 		source_display = "Unknown Source"
 		
-		if best_model == "alphafold_db":
-			pdb_text = alphafold_data.get("pdb_text", "")
-			source_display = "AlphaFold DB"
-		elif best_model == "colabfold_modal":
+		if best_model == "colabfold_modal":
 			modal_data = psp_results.get("colabfold_modal", {})
 			pdb_text = modal_data.get("pdb", "")
-			source_display = "AlphaFold Cloud (Modal)"
+			source_display = "ColabFold/Modal (cloud)"
 		else:
 			esmfold_data = psp_results.get("esmfold", {})
 			pdb_text = esmfold_data.get("pdb", "")

@@ -39,16 +39,6 @@ class ProcessingAgent(BaseAgent):
 			results["sequence_length"] = len(sequence)
 			results["amino_acid_composition"] = dict(Counter(sequence))
 
-		af_data = raw_data.get("alphafold") or {}
-		if af_data:
-			conf = af_data.get("confidence") or af_data.get("confidence_metrics") or af_data.get("plddt_mean")
-			if conf is not None:
-				results["alphafold_confidence"] = conf
-
-			frac_conf = af_data.get("fraction_confident")
-			if frac_conf is not None:
-				results["fraction_confident"] = frac_conf
-
 		pdb_list = raw_data.get("pdb") or []
 		results["pdb_count"] = len(pdb_list)
 		if pdb_list:

@@ -117,15 +117,10 @@ def fetch_uniprot(accession: str) -> Dict[str, Any]:
     if isinstance(rec_name, dict):
         name = rec_name.get("value") or ""
 
-    db_refs: List[Dict[str, Any]] = data.get("dbReferences") or []
-    pdb_ids: List[str] = [ref.get("id") for ref in db_refs if ref.get("type") == "PDB" and ref.get("id")]
-    alphafold_links: List[str] = [ref.get("id") for ref in db_refs if ref.get("type") == "AlphaFoldDB" and ref.get("id")]
-
     return {
         "sequence": sequence,
         "name": name,
         "pdb_ids": pdb_ids,
-        "alphafold_links": alphafold_links,
     }
 
 
@@ -154,52 +149,6 @@ def fetch_pdb(pdb_id: str) -> Dict[str, Any]:
     download_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
     return {"metadata": metadata, "download_url": download_url}
 
-
-def fetch_alphafold(accession: str) -> Dict[str, Any]:
-    url = f"https://www.alphafold.ebi.ac.uk/api/prediction/{accession}"
-    data = _get_json(url)
-
-    if not isinstance(data, list) or not data:
-        return {"pdb_url": None, "confidence_metrics": None, "pae_json_url": None, "pae_image_url": None}
-
-    entry: Dict[str, Any] = data[0]
-    pdb_url: Optional[str] = entry.get("pdbUrl")
-    cif_url: Optional[str] = entry.get("cifUrl")
-    pae_json_url: Optional[str] = entry.get("paeJsonUrl") or entry.get("paeUrl")
-    pae_image_url: Optional[str] = entry.get("paeImageUrl")
-
-    confidence_metrics = entry.get("plddt") or entry.get("confidence")
-
-    plddt_mean: Optional[float] = None
-    plddt_min: Optional[float] = None
-    plddt_max: Optional[float] = None
-    pdb_text_content: Optional[str] = None
-    
-    if pdb_url:
-        try:
-            pdb_text_content = _get_text(pdb_url)
-            if not confidence_metrics:
-                plddt_mean, plddt_min, plddt_max = _plddt_from_pdb_text(pdb_text_content)
-        except Exception:
-            pass
-
-    result: Dict[str, Any] = {
-        "pdb_url": pdb_url,
-        "cif_url": cif_url,
-        "pae_json_url": pae_json_url,
-        "pae_image_url": pae_image_url,
-        "confidence_metrics": confidence_metrics,
-        "pdb_text": pdb_text_content,  # Return actual PDB content
-    }
-
-    if plddt_mean is not None:
-        result.update({
-            "plddt_mean": plddt_mean,
-            "plddt_min": plddt_min,
-            "plddt_max": plddt_max,
-        })
-
-    return result
 
 
 def fetch_pubmed(query: str, api_key: Optional[str] = None, retmax: int = 10) -> Dict[str, Any]:

@@ -1,5 +1,5 @@
 from app.agents.BaseAgent import BaseAgent
-from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_alphafold, fetch_pubmed
+from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_pubmed
 from spade.behaviour import CyclicBehaviour
 from typing import Any, Dict, List
 
@@ -39,7 +39,7 @@ class DataAgent(BaseAgent):
 	def _fetch_by_fasta(self, fasta_content: str) -> dict:
 		"""
 		Parse FASTA sequence directly without external API calls.
-		For FASTA input, we skip UniProt/AlphaFold DB/PDB lookups.
+		For FASTA input, we skip UniProt/PDB lookups.
 		"""
 		lines = fasta_content.strip().split('\n')
 		if lines[0].startswith('>'):
@@ -54,10 +54,8 @@ class DataAgent(BaseAgent):
 				"name": header,
 				"sequence": sequence,
 				"pdb_ids": [],
-				"alphafold_links": []
 			},
 			"pdb": [],
-			"alphafold": {}, 
 			"pubmed": []
 		}
 	
@@ -71,8 +69,6 @@ class DataAgent(BaseAgent):
 			except Exception:
 				continue
 
-		alphafold_data = fetch_alphafold(accession)
-
 		pubmed_data = None
 		if include_pubmed:
 			name = uniprot_data.get("name") or ""
@@ -85,10 +81,8 @@ class DataAgent(BaseAgent):
 				"name": uniprot_data.get("name"),
 				"sequence": uniprot_data.get("sequence"),
 				"pdb_ids": uniprot_data.get("pdb_ids", []),
-				"alphafold_links": uniprot_data.get("alphafold_links", []),
 			},
 			"pdb": pdb_results,
-			"alphafold": alphafold_data,
 			"pubmed": pubmed_data,
 		}
 
