@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass, asdict
 from typing import Any, Dict
 
@@ -38,6 +39,29 @@ class SendBehaviour(OneShotBehaviour):
 
 
 class BaseAgent(Agent):
+	@staticmethod
+	def agent_domain() -> str:
+		return os.getenv("XMPP_DOMAIN", "xmpp")
+
+	@classmethod
+	def format_jid(cls, localpart: str) -> str:
+		return f"{localpart}@{cls.agent_domain()}"
+
+	async def _async_connect(self):
+		"""
+		Allow explicit TLS mode control for local/containerized XMPP.
+		SPADE/slixmpp defaults can require TLS mechanisms that a minimal
+		dev Prosody setup may not advertise, which causes auth negotiation
+		to fail with "No appropriate login method".
+		"""
+		if self.client is not None:
+			self.client.enable_direct_tls = os.getenv("XMPP_USE_SSL", "0") == "1"
+			self.client.enable_starttls = os.getenv("XMPP_FORCE_STARTTLS", "0") == "1"
+			allow_plain = os.getenv("XMPP_ALLOW_UNENCRYPTED_PLAIN_AUTH", "1") == "1"
+			client_plugin = getattr(self.client, "plugin", None)
+			if client_plugin is not None and "feature_mechanisms" in client_plugin and allow_plain:
+				self.client["feature_mechanisms"].unencrypted_plain = True
+		return await super()._async_connect()
 
 	async def setup(self):
 		print(f"Agent {self.jid} started")

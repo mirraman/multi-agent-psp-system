@@ -48,7 +48,7 @@ CONSENSUS_JACCARD_THRESHOLD = 0.5
 class PocketAgent(BaseAgent):
     def __init__(self, jid: str, password: str):
         super().__init__(jid, password)
-        self.coordinator_jid = "coordinator@localhost"
+        self.coordinator_jid = self.format_jid("coordinator")
 
     async def setup(self):
         self.add_behaviour(MessageHandlerBehaviour(self))

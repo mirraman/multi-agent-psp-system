@@ -21,7 +21,7 @@ services:
     image: postgres:16
     container_name: psp-postgres
     ports:
-      - "5432:5432"
+      - "55432:5432"
     environment:
       POSTGRES_USER: psp
       POSTGRES_PASSWORD: psp
@@ -37,6 +37,16 @@ services:
     networks:
       - psp-network
 
+  xmpp:
+    image: prosody/prosody:latest
+    container_name: psp-xmpp
+    volumes:
+      - ./xmpp/prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
+      - prosody-data:/var/lib/prosody
+    restart: unless-stopped
+    networks:
+      - psp-network
+
   # ── Application Services ────────────────────────────────────────────────────
   api:
     build:
@@ -47,6 +57,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
       - REDIS_URL=redis://redis:6379/0
     volumes:
@@ -68,8 +79,21 @@ services:
     container_name: psp-agents
     command: python -m app.AgentRunner
     environment:
+      - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
       - REDIS_URL=redis://redis:6379/0
+      - ENABLE_MODAL=1
+      - XMPP_DOMAIN=xmpp
+      - XMPP_PASSWORD=secret123
+      - XMPP_AUTO_REGISTER=1
+      - XMPP_USE_TLS=0
+      - XMPP_FORCE_STARTTLS=0
+      - XMPP_USE_SSL=0
+      - XMPP_ALLOW_UNENCRYPTED_PLAIN_AUTH=1
+      # Pass host Modal credentials into container when available.
+      # Set these in your shell (or a .env file) before docker compose up.
+      - MODAL_TOKEN_ID=${MODAL_TOKEN_ID}
+      - MODAL_TOKEN_SECRET=${MODAL_TOKEN_SECRET}
     volumes:
       - ./app:/app/app          # live reload for development
       - ./data:/app/data
@@ -78,6 +102,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      xmpp:
+        condition: service_started
     restart: unless-stopped
     networks:
       - psp-network
@@ -101,6 +127,7 @@ services:
 
 volumes:
   postgres-data:
+  prosody-data:
 
 networks:
   psp-network:

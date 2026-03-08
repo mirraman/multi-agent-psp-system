@@ -2,31 +2,11 @@
 # Uses the same Dockerfile base but runs the Celery worker command instead.
 # fpocket is included here too because Celery tasks may in future need it.
 
-# ── Stage 1: Build fpocket ─────────────────────────────────────────────────
-FROM python:3.12-slim AS fpocket-builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    cmake \
-    make \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-RUN git clone --depth 1 --branch v3.2.1 https://github.com/Discngine/fpocket.git . \
-    && mkdir build_cmake \
-    && cd build_cmake \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
-    && make -j$(nproc) \
-    && make install
-
-# ── Stage 2: Celery worker runtime ─────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
-COPY --from=fpocket-builder /usr/local/bin/fpocket /usr/local/bin/fpocket
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 

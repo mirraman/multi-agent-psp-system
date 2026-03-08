@@ -21,14 +21,14 @@ class CoordinatorAgent(BaseAgent):
         self.jobs = {}
         self.db_job_mapping = {}
 
-        self.data_agent_jid = "data_agent@localhost"
-        self.psp_agent_jid = "psp_agent@localhost"
-        self.processing_agent_jid = "processing_agent@localhost"
-        self.synthesis_agent_jid = "synthesis_agent@localhost"
-        self.pocket_agent_jid = "pocket_agent@localhost"
-        self.output_agent_jid = "output_agent@localhost"
-        self.analysis_agent_jid = "analysis_agent@localhost"
-        self.modal_agent_jid = "modal_agent@localhost"
+        self.data_agent_jid = self.format_jid("data_agent")
+        self.psp_agent_jid = self.format_jid("psp_agent")
+        self.processing_agent_jid = self.format_jid("processing_agent")
+        self.synthesis_agent_jid = self.format_jid("synthesis_agent")
+        self.pocket_agent_jid = self.format_jid("pocket_agent")
+        self.output_agent_jid = self.format_jid("output_agent")
+        self.analysis_agent_jid = self.format_jid("analysis_agent")
+        self.modal_agent_jid = self.format_jid("modal_agent")
 
     async def _log(self, job: dict, message: str, level: str = "info"):
         """Write a log entry for a job (to DB and stdout)."""
@@ -172,9 +172,25 @@ class CoordinatorAgent(BaseAgent):
                 return
             await self._log(job, f"Data fetched. Sequence length={len(sequence)}. Routing to structure predictor.")
 
+            try:
+                modal_threshold = int(os.getenv("MODAL_MIN_SEQUENCE_LENGTH", "400"))
+            except ValueError:
+                modal_threshold = 400
             use_modal = os.getenv("ENABLE_MODAL", "0") == "1"
-            if len(sequence) > 400 and use_modal:
-                await self._log(job, f"Sequence > 400aa — routing to Modal/ColabFold (ENABLE_MODAL=1)")
+            await self._log(
+                job,
+                (
+                    f"Routing decision: seq_len={len(sequence)}, "
+                    f"ENABLE_MODAL={'1' if use_modal else '0'}, "
+                    f"MODAL_MIN_SEQUENCE_LENGTH={modal_threshold}"
+                ),
+            )
+
+            if len(sequence) > modal_threshold and use_modal:
+                await self._log(
+                    job,
+                    f"Sequence > {modal_threshold}aa — routing to Modal/ColabFold (ENABLE_MODAL=1)",
+                )
                 msg = self.create_message(
                     to=self.modal_agent_jid,
                     msg_type="request",
@@ -183,14 +199,17 @@ class CoordinatorAgent(BaseAgent):
                     job_id=job_id,
                 )
             else:
-                if len(sequence) > 400:
+                if len(sequence) > modal_threshold:
                     await self._log(
                         job,
-                        "Sequence > 400aa but ENABLE_MODAL!=1 — routing to ESMFold fallback",
+                        (
+                            f"Sequence > {modal_threshold}aa but ENABLE_MODAL!=1 "
+                            "— routing to ESMFold fallback"
+                        ),
                         level="warning",
                     )
                 else:
-                    await self._log(job, "Sequence <= 400aa — routing to ESMFold")
+                    await self._log(job, f"Sequence <= {modal_threshold}aa — routing to ESMFold")
                 msg = self.create_message(
                     to=self.psp_agent_jid,
                     msg_type="request",

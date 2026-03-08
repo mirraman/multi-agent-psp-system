@@ -517,7 +517,7 @@ async def upsert_protein(doc: Dict[str, Any]) -> None:
             text(
                 """
                 INSERT INTO proteins (accession, data)
-                VALUES (:accession, :data::jsonb)
+                VALUES (:accession, CAST(:data AS JSONB))
                 ON CONFLICT (accession) DO UPDATE
                     SET data = EXCLUDED.data
                 """
@@ -548,7 +548,7 @@ async def upsert_aggregate(accession: str, aggregate: Dict[str, Any]) -> None:
             text(
                 """
                 INSERT INTO aggregates (accession, data)
-                VALUES (:accession, :data::jsonb)
+                VALUES (:accession, CAST(:data AS JSONB))
                 ON CONFLICT (accession) DO UPDATE
                     SET data = EXCLUDED.data
                 """
@@ -567,7 +567,7 @@ async def upsert_processed(accession: str, processed: Dict[str, Any]) -> None:
             text(
                 """
                 INSERT INTO processed (accession, processed)
-                VALUES (:accession, :processed::jsonb)
+                VALUES (:accession, CAST(:processed AS JSONB))
                 ON CONFLICT (accession) DO UPDATE
                     SET processed = EXCLUDED.processed
                 """
@@ -595,9 +595,9 @@ async def upsert_protein_result(accession: str, output_doc: Dict[str, Any]) -> N
                      psp_results, models_used, psp_errors, analysis, pockets)
                 VALUES
                     (:accession, :task_id, :status, :timestamp, :output_path,
-                     :uniprot::jsonb, :pdb_files::jsonb, :metrics::jsonb, :synthesis::jsonb,
-                     :psp_results::jsonb, :models_used::jsonb, :psp_errors::jsonb,
-                     :analysis::jsonb, :pockets::jsonb)
+                     CAST(:uniprot AS JSONB), CAST(:pdb_files AS JSONB), CAST(:metrics AS JSONB), CAST(:synthesis AS JSONB),
+                     CAST(:psp_results AS JSONB), CAST(:models_used AS JSONB), CAST(:psp_errors AS JSONB),
+                     CAST(:analysis AS JSONB), CAST(:pockets AS JSONB))
                 ON CONFLICT (accession) DO UPDATE SET
                     task_id     = EXCLUDED.task_id,
                     status      = EXCLUDED.status,

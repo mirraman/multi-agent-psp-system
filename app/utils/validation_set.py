@@ -1,7 +1,6 @@
 from typing import Dict, List
 
-# Known drug-target binding residues for validation benchmarking.
-# Residues are 1-based sequence positions from literature/structure annotations.
+
 VALIDATION_TARGETS: List[Dict[str, object]] = [
     {
         "accession": "P00918",
