@@ -24,8 +24,11 @@ from app.utils.db import (
     upsert_protein_result,
 )
 from app.utils.fasta_parser import parse_fasta, is_valid_protein_sequence
+from app.utils.validation_set import VALIDATION_TARGETS
+from app.utils.validate import validate_pocket, extract_best_predicted_residues
 
 logger = logging.getLogger("psp.main")
+LATEST_VALIDATION_REPORT: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +396,105 @@ async def dashboard() -> str:
         with open(dashboard_path, "r", encoding="utf-8") as f:
             return f.read()
     return "<html><body><h1>Dashboard not found</h1></body></html>"
+
+
+# ---------------------------------------------------------------------------
+# Feature 4: Validation Against Known Drug-Protein Pairs
+# ---------------------------------------------------------------------------
+
+@app.post("/validate")
+async def run_validation() -> Dict[str, Any]:
+    """
+    Validate predicted pockets against known ligand-binding residues.
+    For targets with missing results, queue a normal protein job.
+    """
+    global LATEST_VALIDATION_REPORT
+    _require_db()
+
+    evaluated = []
+    queued = []
+
+    for target in VALIDATION_TARGETS:
+        accession = str(target["accession"])
+        known_residues = [int(x) for x in list(target["known_binding_residues"])]
+        result = await get_protein_result(accession)
+
+        if not result:
+            job_id = await insert_task(
+                {
+                    "type": "validation_analysis",
+                    "input_type": "accession",
+                    "input_value": accession,
+                    "status": "queued",
+                    "created_at": datetime.now(),
+                }
+            )
+            queued.append(
+                {
+                    "accession": accession,
+                    "name": target["name"],
+                    "job_id": int(job_id),
+                    "status": "queued_for_prediction",
+                }
+            )
+            continue
+
+        predicted_residues = extract_best_predicted_residues(result)
+        metrics = validate_pocket(predicted_residues, known_residues, tolerance=2)
+        evaluated.append(
+            {
+                "accession": accession,
+                "name": target["name"],
+                "known_binding_residues": known_residues,
+                "predicted_residues": predicted_residues,
+                "metrics": metrics,
+            }
+        )
+
+    avg_precision = (
+        round(sum(x["metrics"]["precision"] for x in evaluated) / len(evaluated), 4)
+        if evaluated
+        else 0.0
+    )
+    avg_recall = (
+        round(sum(x["metrics"]["recall"] for x in evaluated) / len(evaluated), 4)
+        if evaluated
+        else 0.0
+    )
+    avg_f1 = (
+        round(sum(x["metrics"]["f1"] for x in evaluated) / len(evaluated), 4)
+        if evaluated
+        else 0.0
+    )
+
+    LATEST_VALIDATION_REPORT = {
+        "generated_at": datetime.now().isoformat(),
+        "total_targets": len(VALIDATION_TARGETS),
+        "evaluated_targets": len(evaluated),
+        "queued_targets": len(queued),
+        "summary": {
+            "avg_precision": avg_precision,
+            "avg_recall": avg_recall,
+            "avg_f1": avg_f1,
+        },
+        "evaluated": evaluated,
+        "queued": queued,
+    }
+
+    return LATEST_VALIDATION_REPORT
+
+
+@app.get("/validate")
+async def get_validation_report() -> Dict[str, Any]:
+    """
+    Return the latest cached validation report.
+    """
+    if not LATEST_VALIDATION_REPORT:
+        raise HTTPException(
+            status_code=404,
+            detail="No validation report cached yet. Run POST /validate first.",
+        )
+    return LATEST_VALIDATION_REPORT
 
 
 # ---------------------------------------------------------------------------
