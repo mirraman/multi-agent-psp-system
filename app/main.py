@@ -1,77 +1,442 @@
 import os
 import logging
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
-from typing import Dict, Any
+from typing import Any, Dict, List, Optional
 from contextlib import asynccontextmanager
 
-from app.utils.db import DatabaseConnection, insert_task, get_protein_result
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from app.utils.db import (
+    DatabaseConnection,
+    insert_task,
+    get_task_by_id,
+    get_job_logs,
+    get_protein_result,
+    get_result_by_task_id,
+    insert_dataset,
+    get_dataset,
+    get_dataset_jobs,
+    get_metrics,
+    # kept for backward compatibility
+    upsert_protein_result,
+)
+from app.utils.fasta_parser import parse_fasta, is_valid_protein_sequence
 
 logger = logging.getLogger("psp.main")
 
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://psp:psp@localhost:5432/psp_db")
+    database_url = os.getenv(
+        "DATABASE_URL", "postgresql+asyncpg://psp:psp@localhost:5432/psp_db"
+    )
     try:
         await DatabaseConnection.init(database_url)
-        print("Connected to PostgreSQL via FastAPI")
+        logger.info("Connected to PostgreSQL")
     except Exception as e:
-        print(f"Failed to connect to PostgreSQL: {e}")
+        logger.error(f"Failed to connect to PostgreSQL: {e}")
     yield
     await DatabaseConnection.close()
 
-app = FastAPI(lifespan=lifespan)
 
-@app.post("/submit/{input_value}")
-async def submit_job(input_value: str) -> Dict[str, str]:
-    """
-    Submit a protein structure prediction job.
-    
-    Accepts:
-    - Accession ID (e.g., P12345)
-    - FASTA sequence (e.g., MQIFVKTLT...)
-    
-    Auto-detects input type.
-    """
+app = FastAPI(
+    title="Multi-Agent PSP System",
+    description="Protein Structure Prediction API with drug-discovery pipeline",
+    version="2.0.0",
+    lifespan=lifespan,
+)
+
+# Serve static files (dashboard HTML)
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+class JobSubmitRequest(BaseModel):
+    type: str = "protein_analysis"
+    sequence: Optional[str] = None
+    accession: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Feature 1: Job Queue API
+# ---------------------------------------------------------------------------
+
+def _require_db():
     if DatabaseConnection.engine is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    
+
+
+@app.post("/jobs", status_code=201)
+async def create_job(body: JobSubmitRequest) -> Dict[str, Any]:
+    """
+    Submit a protein analysis job.
+
+    Provide either:
+    - `sequence`: raw amino-acid string (FASTA without header, or with '>header' prefix)
+    - `accession`: UniProt accession ID (e.g. 'P12345')
+    """
+    _require_db()
+
+    if body.sequence:
+        raw = body.sequence.strip()
+        if raw.startswith(">"):
+            # Single-entry FASTA — strip the header
+            lines = raw.splitlines()
+            sequence = "".join(l for l in lines[1:] if not l.startswith(">")).replace(" ", "")
+        else:
+            sequence = raw
+        input_type = "fasta"
+        input_value = sequence
+    elif body.accession:
+        input_type = "accession"
+        input_value = body.accession.strip()
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either 'sequence' (FASTA/amino-acids) or 'accession' (UniProt ID)",
+        )
+
+    if not input_value:
+        raise HTTPException(status_code=400, detail="Input cannot be empty")
+
+    task_doc = {
+        "type": body.type,
+        "input_type": input_type,
+        "input_value": input_value,
+        "status": "queued",
+        "created_at": datetime.now(),
+    }
+    job_id = await insert_task(task_doc)
+    logger.info(f"Job created: {job_id} ({input_type}: {input_value[:50]})")
+
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "input_type": input_type,
+        "message": f"Job queued — CoordinatorAgent will pick it up within 5s",
+    }
+
+
+@app.get("/jobs/{job_id}")
+async def get_job(job_id: int) -> Dict[str, Any]:
+    """
+    Get job status and metadata.
+
+    Returns: status, start_time, worker_id, retries, execution_time, etc.
+    Status values: queued | running | completed | failed
+    """
+    _require_db()
+    job = await get_task_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Serialize datetimes
+    for field in ("created_at", "start_time", "end_time"):
+        if job.get(field) and hasattr(job[field], "isoformat"):
+            job[field] = job[field].isoformat()
+
+    return job
+
+
+@app.get("/jobs/{job_id}/logs")
+async def get_job_log_entries(job_id: int) -> Dict[str, Any]:
+    """
+    Return structured log entries for a job — one entry per pipeline step.
+    """
+    _require_db()
+    job = await get_task_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    logs = await get_job_logs(job_id)
+    for entry in logs:
+        if entry.get("timestamp") and hasattr(entry["timestamp"], "isoformat"):
+            entry["timestamp"] = entry["timestamp"].isoformat()
+
+    return {"job_id": job_id, "count": len(logs), "logs": logs}
+
+
+@app.get("/jobs/{job_id}/result")
+async def get_job_result(job_id: int) -> Dict[str, Any]:
+    """
+    Return the full result for a completed job.
+    Returns 404 if not completed yet.
+    """
+    _require_db()
+    job = await get_task_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    if job["status"] != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {job_id} is not completed yet (current status: {job['status']})",
+        )
+
+    result = await get_result_by_task_id(job_id)
+    if not result:
+        # Fallback: try by accession
+        result = await get_protein_result(job["input_value"])
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not yet persisted — try again shortly")
+
+    # Serialize timestamps
+    if result.get("timestamp") and hasattr(result["timestamp"], "isoformat"):
+        result["timestamp"] = result["timestamp"].isoformat()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Feature 2: Dataset / Batch Processing
+# ---------------------------------------------------------------------------
+
+@app.post("/datasets", status_code=201)
+async def upload_dataset(
+    file: Optional[UploadFile] = File(None),
+    fasta_text: Optional[str] = Form(None),
+    name: Optional[str] = Form(None),
+) -> Dict[str, Any]:
+    """
+    Upload a FASTA file (or paste FASTA text) to batch-process multiple proteins.
+
+    The system will:
+    1. Parse the FASTA into individual proteins
+    2. Create a dataset record
+    3. Create one job per protein (all queued automatically)
+    4. Return the dataset_id to track aggregate progress
+
+    Example FASTA:
+        >protein_1
+        MKTLLILALAL...
+        >protein_2
+        AGSTKDL...
+    """
+    _require_db()
+
+    raw_content: Optional[str] = None
+    filename: Optional[str] = None
+
+    if file:
+        content_bytes = await file.read()
+        try:
+            raw_content = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="File must be UTF-8 encoded text")
+        filename = file.filename
+    elif fasta_text:
+        raw_content = fasta_text
+        filename = "inline"
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either a 'file' upload or 'fasta_text' form field",
+        )
+
+    proteins = parse_fasta(raw_content)
+    if not proteins:
+        raise HTTPException(
+            status_code=422,
+            detail="No valid FASTA entries found. Ensure the file starts with '>header' lines.",
+        )
+
+    # Filter out invalid sequences
+    valid = [(h, n, s) for h, n, s in proteins if is_valid_protein_sequence(s)]
+    skipped = len(proteins) - len(valid)
+
+    if not valid:
+        raise HTTPException(status_code=422, detail="No protein entries had valid amino-acid sequences")
+
+    dataset_id = await insert_dataset(
+        name=name or filename,
+        filename=filename,
+        total_jobs=len(valid),
+    )
+
+    job_ids = []
+    for header, prot_name, sequence in valid:
+        # Use protein name as input_value for accession-like tracking
+        input_value = sequence  # submit raw sequence; CoordinatorAgent handles it
+        jid = await insert_task(
+            {
+                "type": "protein_analysis",
+                "input_type": "fasta",
+                "input_value": input_value,
+                "status": "queued",
+                "dataset_id": int(dataset_id),
+            }
+        )
+        job_ids.append({"job_id": jid, "protein_name": prot_name, "sequence_length": len(sequence)})
+
+    logger.info(f"Dataset {dataset_id}: created {len(valid)} jobs from {filename}")
+
+    return {
+        "dataset_id": dataset_id,
+        "jobs_created": len(valid),
+        "skipped_invalid": skipped,
+        "job_ids": job_ids,
+        "message": f"Dataset queued — {len(valid)} proteins will be processed automatically",
+    }
+
+
+@app.get("/datasets/{dataset_id}")
+async def get_dataset_status(dataset_id: int) -> Dict[str, Any]:
+    """Aggregate status for a dataset — how many jobs are queued/running/completed/failed."""
+    _require_db()
+    ds = await get_dataset(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    for field in ("created_at",):
+        if ds.get(field) and hasattr(ds[field], "isoformat"):
+            ds[field] = ds[field].isoformat()
+
+    return ds
+
+
+@app.get("/datasets/{dataset_id}/jobs")
+async def get_dataset_job_list(dataset_id: int) -> Dict[str, Any]:
+    """List all jobs in a dataset with their current status."""
+    _require_db()
+    ds = await get_dataset(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    jobs = await get_dataset_jobs(dataset_id)
+    for job in jobs:
+        for field in ("created_at", "start_time", "end_time"):
+            if job.get(field) and hasattr(job[field], "isoformat"):
+                job[field] = job[field].isoformat()
+
+    return {"dataset_id": dataset_id, "total": len(jobs), "jobs": jobs}
+
+
+@app.get("/datasets/{dataset_id}/report")
+async def get_dataset_report(dataset_id: int) -> Dict[str, Any]:
+    """
+    Aggregated report across all completed proteins in a dataset.
+    Returns summary stats + per-protein pocket results.
+    """
+    _require_db()
+    ds = await get_dataset(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    jobs = await get_dataset_jobs(dataset_id)
+    completed_jobs = [j for j in jobs if j["status"] == "completed"]
+
+    # Gather results for completed jobs
+    protein_summaries = []
+    total_pockets = 0
+    for job in completed_jobs:
+        result = await get_result_by_task_id(job["id"])
+        if result:
+            pocket_data = result.get("pockets") or {}
+            pocket_summary = pocket_data.get("pocket_summary", {}) if isinstance(pocket_data, dict) else {}
+            hc = pocket_summary.get("high_confidence", 0)
+            total_pockets += hc
+            protein_summaries.append(
+                {
+                    "job_id": job["id"],
+                    "accession": result.get("accession"),
+                    "execution_time_s": round(job.get("execution_time") or 0, 1),
+                    "high_confidence_pockets": hc,
+                    "best_model": (result.get("synthesis") or {}).get("best_model"),
+                }
+            )
+
+    return {
+        "dataset_id": dataset_id,
+        "dataset_name": ds.get("name"),
+        "total_proteins": ds["total_jobs"],
+        "completed": len(completed_jobs),
+        "failed": ds["job_counts"].get("failed", 0),
+        "pending": ds["job_counts"].get("queued", 0) + ds["job_counts"].get("running", 0),
+        "total_pockets_found": total_pockets,
+        "proteins": protein_summaries,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Feature 3: Metrics & Dashboard
+# ---------------------------------------------------------------------------
+
+@app.get("/metrics")
+async def metrics_endpoint() -> Dict[str, Any]:
+    """Return live system metrics for the monitoring dashboard."""
+    _require_db()
+    return await get_metrics()
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard() -> str:
+    """Serve the monitoring dashboard HTML page."""
+    dashboard_path = os.path.join(
+        os.path.dirname(__file__), "static", "dashboard.html"
+    )
+    if os.path.exists(dashboard_path):
+        with open(dashboard_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<html><body><h1>Dashboard not found</h1></body></html>"
+
+
+# ---------------------------------------------------------------------------
+# Legacy endpoints (backward compatibility — deprecated)
+# ---------------------------------------------------------------------------
+
+@app.post("/submit/{input_value}", deprecated=True)
+async def submit_job_legacy(input_value: str) -> Dict[str, str]:
+    """
+    [DEPRECATED] Use POST /jobs instead.
+    Submit a protein structure prediction job by accession or FASTA sequence.
+    """
+    _require_db()
     if not input_value or not input_value.strip():
         raise HTTPException(status_code=400, detail="Input cannot be empty")
 
-    # Auto-detect input type
-    # If starts with '>' or contains only amino acid letters, it's FASTA
-    # Otherwise, assume it's an accession ID
-    input_type = "fasta" if (input_value.startswith(">") or 
-                             (input_value and all(c in "ACDEFGHIKLMNPQRSTVWY" for c in input_value.upper()))) else "accession"
-    
+    input_type = (
+        "fasta"
+        if (
+            input_value.startswith(">")
+            or (input_value and all(c in "ACDEFGHIKLMNPQRSTVWY" for c in input_value.upper()))
+        )
+        else "accession"
+    )
+
     task_doc = {
         "type": "protein_structure_pipeline",
         "input_type": input_type,
         "input_value": input_value,
-        "status": "pending",  
-        "created_at": str(datetime.now())
+        "status": "queued",
+        "created_at": datetime.now(),
     }
-    
     job_id = await insert_task(task_doc)
-    
-    logger.info(f"Job registered: {job_id} for {input_type}: {input_value[:50]}...")
+    logger.info(f"[LEGACY] Job registered: {job_id} for {input_type}: {input_value[:50]}")
+
     return {
-        "job_id": job_id, 
+        "job_id": job_id,
         "status": "queued",
         "input_type": input_type,
-        "message": f"Job submitted to CoordinatorAgent ({input_type})"
+        "message": f"Job submitted to CoordinatorAgent ({input_type})",
     }
 
-@app.get("/status/{accession}")
-async def get_status(accession: str) -> Dict[str, Any]:
-   
-    if DatabaseConnection.engine is None:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-        
+
+@app.get("/status/{accession}", deprecated=True)
+async def get_status_legacy(accession: str) -> Dict[str, Any]:
+    """[DEPRECATED] Use GET /jobs/{id}/result instead."""
+    _require_db()
     result = await get_protein_result(accession)
     if result:
         return {"status": "completed", "data": result}
-    
-
     return {"status": "processing_or_not_found"}

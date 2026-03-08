@@ -7,3 +7,4 @@ celery>=5.3.6
 redis>=5.0.4
 spade>=3.3.2
 biopython>=1.83
+python-multipart>=0.0.9

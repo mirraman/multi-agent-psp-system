@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PSP System — Monitoring Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #7d8590;
+      --accent: #58a6ff;
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+      --running: #a371f7;
+      --radius: 12px;
+      --transition: 0.25s ease;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+      min-height: 100vh;
+      padding: 0 0 48px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), var(--running));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-left p {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 2px;
+    }
+
+    .refresh-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .refresh-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    /* ── Main layout ── */
+    main { max-width: 1200px; margin: 0 auto; padding: 40px 40px 0; }
+
+    /* ── Metrics grid ── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+
+    .metric-card.blue::before   { background: linear-gradient(90deg, var(--accent), #1f6feb); }
+    .metric-card.green::before  { background: linear-gradient(90deg, var(--success), #2ea043); }
+    .metric-card.orange::before { background: linear-gradient(90deg, var(--warning), #bb8009); }
+    .metric-card.red::before    { background: linear-gradient(90deg, var(--danger), #b91c1c); }
+    .metric-card.purple::before { background: linear-gradient(90deg, var(--running), #7c3aed); }
+
+    .metric-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .metric-value {
+      font-size: 2.4rem;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 6px;
+      transition: color 0.4s ease;
+    }
+
+    .metric-card.blue .metric-value   { color: var(--accent); }
+    .metric-card.green .metric-value  { color: var(--success); }
+    .metric-card.orange .metric-value { color: var(--warning); }
+    .metric-card.red .metric-value    { color: var(--danger); }
+    .metric-card.purple .metric-value { color: var(--running); }
+
+    .metric-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Info icon ── */
+    .metric-icon {
+      position: absolute;
+      top: 20px; right: 20px;
+      font-size: 1.5rem;
+      opacity: 0.2;
+    }
+
+    /* ── Section header ── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .section-header h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .section-header .divider {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Status bar ── */
+    .status-bar-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 40px;
+    }
+
+    .status-bar-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .status-bar-label span { font-size: 0.82rem; color: var(--text-muted); }
+
+    .status-bar {
+      height: 12px;
+      background: var(--surface2);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      gap: 2px;
+      margin-bottom: 16px;
+    }
+
+    .bar-segment {
+      height: 100%;
+      transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 6px;
+    }
+
+    .bar-segment.completed { background: var(--success); }
+    .bar-segment.running   { background: var(--running); }
+    .bar-segment.queued    { background: var(--accent); }
+    .bar-segment.failed    { background: var(--danger); }
+
+    .status-legend {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+
+    .legend-dot.completed { background: var(--success); }
+    .legend-dot.running   { background: var(--running); }
+    .legend-dot.queued    { background: var(--accent); }
+    .legend-dot.failed    { background: var(--danger); }
+
+    /* ── Error state ── */
+    .error-banner {
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      color: var(--danger);
+      font-size: 0.85rem;
+      display: none;
+      margin-bottom: 24px;
+    }
+
+    /* ── Last updated ── */
+    #last-updated {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: right;
+      margin-top: 16px;
+    }
+
+    /* ── Skeleton loader ── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+      background-size: 200% 100%;
+      animation: skeleton-wave 1.5s infinite;
+      border-radius: 4px;
+      color: transparent !important;
+    }
+
+    @keyframes skeleton-wave {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      header, main { padding-left: 20px; padding-right: 20px; }
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>PSP System Dashboard</h1>
+    <p>Multi-Agent Protein Structure Prediction &amp; Drug Discovery</p>
+  </div>
+  <div class="refresh-badge">
+    <div class="refresh-dot"></div>
+    <span>Live · refreshes every 10s</span>
+  </div>
+</header>
+
+<main>
+  <div id="error-banner" class="error-banner">
+    ⚠ Failed to fetch metrics — is the API running?
+  </div>
+
+  <!-- Key metrics cards -->
+  <div class="metrics-grid">
+    <div class="metric-card blue">
+      <div class="metric-icon">📋</div>
+      <div class="metric-label">Jobs Today</div>
+      <div class="metric-value skeleton" id="jobs-today">—</div>
+      <div class="metric-sub">total submitted in 24h</div>
+    </div>
+
+    <div class="metric-card purple">
+      <div class="metric-icon">⚡</div>
+      <div class="metric-label">Jobs / Hour</div>
+      <div class="metric-value skeleton" id="jobs-per-hour">—</div>
+      <div class="metric-sub">completed last hour</div>
+    </div>
+
+    <div class="metric-card green">
+      <div class="metric-icon">✅</div>
+      <div class="metric-label">Success Rate</div>
+      <div class="metric-value skeleton" id="success-rate">—</div>
+      <div class="metric-sub">of all finished jobs</div>
+    </div>
+
+    <div class="metric-card orange">
+      <div class="metric-icon">⏱</div>
+      <div class="metric-label">Avg Runtime</div>
+      <div class="metric-value skeleton" id="avg-runtime">—</div>
+      <div class="metric-sub">seconds per job</div>
+    </div>
+
+    <div class="metric-card red">
+      <div class="metric-icon">❌</div>
+      <div class="metric-label">Failed Jobs</div>
+      <div class="metric-value skeleton" id="failed-jobs">—</div>
+      <div class="metric-sub">total failures</div>
+    </div>
+
+    <div class="metric-card blue">
+      <div class="metric-icon">🔄</div>
+      <div class="metric-label">Queue Size</div>
+      <div class="metric-value skeleton" id="queue-size">—</div>
+      <div class="metric-sub" id="running-label">waiting · 0 running</div>
+    </div>
+  </div>
+
+  <!-- Status breakdown bar -->
+  <div class="section-header">
+    <h2>Job Status Breakdown</h2>
+    <div class="divider"></div>
+  </div>
+
+  <div class="status-bar-container">
+    <div class="status-bar-label">
+      <span>All-time job distribution</span>
+      <span id="total-label">— total jobs</span>
+    </div>
+    <div class="status-bar" id="status-bar">
+      <div class="bar-segment completed" id="bar-completed" style="width:0%"></div>
+      <div class="bar-segment running"   id="bar-running"   style="width:0%"></div>
+      <div class="bar-segment queued"    id="bar-queued"    style="width:0%"></div>
+      <div class="bar-segment failed"    id="bar-failed"    style="width:0%"></div>
+    </div>
+    <div class="status-legend">
+      <div class="legend-item"><div class="legend-dot completed"></div><span id="leg-completed">Completed (0)</span></div>
+      <div class="legend-item"><div class="legend-dot running"></div><span id="leg-running">Running (0)</span></div>
+      <div class="legend-item"><div class="legend-dot queued"></div><span id="leg-queued">Queued (0)</span></div>
+      <div class="legend-item"><div class="legend-dot failed"></div><span id="leg-failed">Failed (0)</span></div>
+    </div>
+  </div>
+
+  <div id="last-updated">Last updated: —</div>
+</main>
+
+<script>
+  const API = '/metrics';
+  let prevData = null;
+
+  function fmt(val, suffix = '') {
+    if (val === null || val === undefined) return '—';
+    return val + suffix;
+  }
+
+  function fmtTime(secs) {
+    if (!secs && secs !== 0) return '—';
+    if (secs < 60) return Math.round(secs) + 's';
+    const m = Math.floor(secs / 60);
+    const s = Math.round(secs % 60);
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+
+  function flashUpdate(el) {
+    el.style.transition = 'none';
+    el.style.opacity = '0.3';
+    requestAnimationFrame(() => {
+      el.style.transition = 'opacity 0.4s ease';
+      el.style.opacity = '1';
+    });
+  }
+
+  function setText(id, value, doFlash = true) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('skeleton');
+    if (el.textContent !== String(value)) {
+      el.textContent = value;
+      if (doFlash) flashUpdate(el);
+    }
+  }
+
+  function setBarWidth(id, pct) {
+    const el = document.getElementById(id);
+    if (el) el.style.width = pct + '%';
+  }
+
+  async function fetchMetrics() {
+    const errorBanner = document.getElementById('error-banner');
+    try {
+      const resp = await fetch(API);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const d = await resp.json();
+      errorBanner.style.display = 'none';
+
+      setText('jobs-today',     fmt(d.jobs_today));
+      setText('jobs-per-hour',  fmt(d.jobs_per_hour));
+      setText('success-rate',   d.success_rate_pct != null ? d.success_rate_pct + '%' : '—');
+      setText('avg-runtime',    fmtTime(d.average_runtime_seconds));
+      setText('failed-jobs',    fmt(d.failed_jobs));
+      setText('queue-size',     fmt(d.queue_length));
+
+      const runEl = document.getElementById('running-label');
+      if (runEl) runEl.textContent = `waiting · ${d.running_jobs || 0} running`;
+
+      // Status bar
+      const total = (d.completed_today || 0) + (d.failed_jobs || 0) +
+                    (d.queue_length || 0) + (d.running_jobs || 0);
+
+      if (total > 0) {
+        const c = Math.round(((d.completed_today || 0) / total) * 100);
+        const r = Math.round(((d.running_jobs   || 0) / total) * 100);
+        const q = Math.round(((d.queue_length   || 0) / total) * 100);
+        const f = 100 - c - r - q;
+        setBarWidth('bar-completed', c);
+        setBarWidth('bar-running',   r);
+        setBarWidth('bar-queued',    q);
+        setBarWidth('bar-failed',    Math.max(0, f));
+      }
+
+      setText('leg-completed', `Completed (${d.completed_today || 0})`, false);
+      setText('leg-running',   `Running (${d.running_jobs || 0})`, false);
+      setText('leg-queued',    `Queued (${d.queue_length || 0})`, false);
+      setText('leg-failed',    `Failed (${d.failed_jobs || 0})`, false);
+      setText('total-label',   `${total} total jobs`, false);
+
+      const now = new Date().toLocaleTimeString();
+      document.getElementById('last-updated').textContent = `Last updated: ${now}`;
+    } catch (e) {
+      errorBanner.style.display = 'block';
+      console.error('Metrics fetch error:', e);
+    }
+  }
+
+  // Initial fetch + auto-refresh every 10 seconds
+  fetchMetrics();
+  setInterval(fetchMetrics, 10_000);
+</script>
+
+</body>
+</html>

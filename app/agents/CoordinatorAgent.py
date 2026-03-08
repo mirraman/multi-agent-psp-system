@@ -1,283 +1,307 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from app.agents.BaseAgent import BaseAgent, AgentMessage
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
-from app.utils.db import DatabaseConnection, update_task, upsert_protein_result, claim_pending_job
+from app.utils.db import (
+    DatabaseConnection,
+    update_task,
+    upsert_protein_result,
+    claim_pending_job,
+    complete_task,
+    fail_task,
+    insert_job_log,
+)
+
 
 class CoordinatorAgent(BaseAgent):
-	def __init__(self, jid: str, password: str):
-		super().__init__(jid, password)
+    def __init__(self, jid: str, password: str):
+        super().__init__(jid, password)
 
-		self.jobs = {}
-		self.db_job_mapping = {}  
+        self.jobs = {}
+        self.db_job_mapping = {}
 
-		self.data_agent_jid = "data_agent@localhost"
-		self.psp_agent_jid = "psp_agent@localhost"
-		self.processing_agent_jid = "processing_agent@localhost"
-		self.synthesis_agent_jid = "synthesis_agent@localhost"
-		self.pocket_agent_jid = "pocket_agent@localhost"
-		self.output_agent_jid = "output_agent@localhost"
-		self.analysis_agent_jid = "analysis_agent@localhost"
-		self.modal_agent_jid = "modal_agent@localhost"
+        self.data_agent_jid = "data_agent@localhost"
+        self.psp_agent_jid = "psp_agent@localhost"
+        self.processing_agent_jid = "processing_agent@localhost"
+        self.synthesis_agent_jid = "synthesis_agent@localhost"
+        self.pocket_agent_jid = "pocket_agent@localhost"
+        self.output_agent_jid = "output_agent@localhost"
+        self.analysis_agent_jid = "analysis_agent@localhost"
+        self.modal_agent_jid = "modal_agent@localhost"
 
-	async def start_job(self, input_type: str, input_value: str, db_job_id: str = None, options: dict = None): 
-		job_id = db_job_id or str(uuid.uuid4())
+    async def _log(self, job: dict, message: str, level: str = "info"):
+        """Write a log entry for a job (to DB and stdout)."""
+        print(f"[{job.get('db_job_id', '?')}] {message}")
+        db_job_id = job.get("db_job_id")
+        if db_job_id and DatabaseConnection.engine is not None:
+            await insert_job_log(db_job_id, message, level)
 
-		self.jobs[job_id] = {
-			"status": "fetching_data",
-			"input_type": input_type,
-			"input_value": input_value,
-			"options": options or {},
-			"raw_data": None,
-			"psp_results": None,
-			"processing_results": None,
-			"analysis_results": None,
-			"synthesis_results": None,
-			"pocket_results": None,
-			"output_results": None,
-			"db_job_id": db_job_id,
-		}
+    async def start_job(self, input_type: str, input_value: str, db_job_id: str = None, options: dict = None):
+        job_id = db_job_id or str(uuid.uuid4())
 
-		msg = self.create_message(
-			to=self.data_agent_jid,
-			msg_type="request",
-			action="fetch_data",
-			payload={"input_type": input_type, "input_value": input_value},
-			job_id=job_id,
-		)
-		await self.send(msg)
+        self.jobs[job_id] = {
+            "status": "fetching_data",
+            "input_type": input_type,
+            "input_value": input_value,
+            "options": options or {},
+            "raw_data": None,
+            "psp_results": None,
+            "processing_results": None,
+            "analysis_results": None,
+            "synthesis_results": None,
+            "pocket_results": None,
+            "output_results": None,
+            "db_job_id": db_job_id,
+        }
 
-		return job_id
-		
-	async def setup(self):
-		behaviour = MessageHandlerBehaviour(self)
-		self.add_behaviour(behaviour)
-		
-		check_db_behaviour = CheckDatabaseForJobsBehaviour(period=5)
-		self.add_behaviour(check_db_behaviour)
+        await self._log(self.jobs[job_id], f"Job started — input_type={input_type}, value={input_value[:60]}")
 
-		print(f"CoordinatorAgent {self.jid} started")
+        msg = self.create_message(
+            to=self.data_agent_jid,
+            msg_type="request",
+            action="fetch_data",
+            payload={"input_type": input_type, "input_value": input_value},
+            job_id=job_id,
+        )
+        await self.send(msg)
+        return job_id
 
+    async def setup(self):
+        behaviour = MessageHandlerBehaviour(self)
+        self.add_behaviour(behaviour)
 
+        check_db_behaviour = CheckDatabaseForJobsBehaviour(period=5)
+        self.add_behaviour(check_db_behaviour)
 
-	async def handle_response(self, agent_msg: AgentMessage):
-		job_id = agent_msg.job_id
-		action = agent_msg.action
+        print(f"CoordinatorAgent {self.jid} started")
 
-		job = self.jobs.get(job_id)
-		if not job:
-			print(f"Job {job_id} not found")
-			return
+    async def handle_response(self, agent_msg: AgentMessage):
+        job_id = agent_msg.job_id
+        action = agent_msg.action
 
-		if action == "data_fetched":
-			print(f"[{job_id}] Data collection complete! Moving to prediction")
-			job["raw_data"] = agent_msg.payload.get("data")
-			job["status"] = "predicting_structure"
+        job = self.jobs.get(job_id)
+        if not job:
+            print(f"Job {job_id} not found in memory — ignoring message action={action}")
+            return
 
-			sequence = job["raw_data"].get("uniprot", {}).get("sequence", "")
+        if action == "data_fetched":
+            job["raw_data"] = agent_msg.payload.get("data")
+            job["status"] = "predicting_structure"
+            sequence = job["raw_data"].get("uniprot", {}).get("sequence", "")
+            await self._log(job, f"Data fetched. Sequence length={len(sequence)}. Routing to structure predictor.")
 
-			if len(sequence) > 400:
-				print(f"[{job_id}] Sequence length {len(sequence)} > 400. Routing to Modal Agent (ColabFold).")
-				msg = self.create_message(
-					to=self.modal_agent_jid,
-					msg_type="request",
-					action="predict_colabfold_modal",
-					payload={"sequence": sequence},
-					job_id=job_id,
-				)
-				await self.send(msg)
-			else: 
-				print(f"[{job_id}] Sequence length {len(sequence)} <= 400. Routing to PSP Agent (ESMFold).")
-				msg = self.create_message(
-					to=self.psp_agent_jid,
-					msg_type="request",
-					action="predict_structure",
-					payload={"sequence": sequence},
-					job_id=job_id,
-				)
-				await self.send(msg)
-		elif action == "structure_predicted":
-			job["psp_results"] = agent_msg.payload.get("results", {})
-			job["models_used"] = agent_msg.payload.get("models_used", [])
-			job["psp_errors"] = agent_msg.payload.get("errors", {})
-			job["status"] = "processing"
-			
-			if job["models_used"]:
-				print(f"[{job_id}] Received predictions from: {job['models_used']}")
-			if job["psp_errors"]:
-				print(f"[{job_id}] Warning: Some models failed: {list(job['psp_errors'].keys())}")
-			
-			msg = self.create_message(
-				to=self.processing_agent_jid,
-				msg_type="request",
-				action="process",
-				payload={
-					"raw_data": job["raw_data"],
-					"psp_results": job["psp_results"],
-				},
-				job_id=job_id,
-			)
-			await self.send(msg)
+            if len(sequence) > 400:
+                await self._log(job, f"Sequence > 400aa — routing to Modal/ColabFold")
+                msg = self.create_message(
+                    to=self.modal_agent_jid,
+                    msg_type="request",
+                    action="predict_colabfold_modal",
+                    payload={"sequence": sequence},
+                    job_id=job_id,
+                )
+            else:
+                await self._log(job, f"Sequence <= 400aa — routing to ESMFold")
+                msg = self.create_message(
+                    to=self.psp_agent_jid,
+                    msg_type="request",
+                    action="predict_structure",
+                    payload={"sequence": sequence},
+                    job_id=job_id,
+                )
+            await self.send(msg)
 
-		elif action == "processed":
-			job["processing_results"] = agent_msg.payload.get("metrics")
-			job["status"] = "analyzing"
-			msg = self.create_message(
-				to=self.analysis_agent_jid,
-				msg_type="request",
-				action="analyze",
-				payload={
-					"raw_data": job["raw_data"],
-					"psp_results": job["psp_results"],
-					"processing_results": job["processing_results"],
-				},
-				job_id=job_id,
-			)
-			await self.send(msg)
+        elif action == "structure_predicted":
+            job["psp_results"] = agent_msg.payload.get("results", {})
+            job["models_used"] = agent_msg.payload.get("models_used", [])
+            job["psp_errors"] = agent_msg.payload.get("errors", {})
+            job["status"] = "processing"
 
-		elif action == "analyzed":
-			job["analysis_results"] = agent_msg.payload.get("analysis")
-			job["status"] = "synthesizing"
-			print(f"[{job_id}] Analysis complete: {job['analysis_results'].get('summary', '')}")
-			msg = self.create_message(
-				to=self.synthesis_agent_jid,
-				msg_type="request",
-				action="synthesize",
-				payload={
-					"raw_data": job["raw_data"],
-					"psp_results": job["psp_results"],
-					"processing_results": job["processing_results"],
-					"analysis_results": job["analysis_results"],
-				},
-				job_id=job_id,
-			)
-			await self.send(msg)
+            models_str = ", ".join(job["models_used"]) if job["models_used"] else "none"
+            await self._log(job, f"Structure predicted. Models used: {models_str}")
+            if job["psp_errors"]:
+                await self._log(job, f"Some models failed: {list(job['psp_errors'].keys())}", level="warning")
 
-		elif action == "synthesized":
-			job["synthesis_results"] = agent_msg.payload.get("synthesis")
-			job["status"] = "detecting_pockets"
+            msg = self.create_message(
+                to=self.processing_agent_jid,
+                msg_type="request",
+                action="process",
+                payload={
+                    "raw_data": job["raw_data"],
+                    "psp_results": job["psp_results"],
+                },
+                job_id=job_id,
+            )
+            await self.send(msg)
 
-			# Determine which PDB to send for pocket detection
-			best_model = job["synthesis_results"].get("best_model", "esmfold")
-			psp_results = job.get("psp_results", {})
-			raw_data = job.get("raw_data", {})
+        elif action == "processed":
+            job["processing_results"] = agent_msg.payload.get("metrics")
+            job["status"] = "analyzing"
+            await self._log(job, "Processing complete. Dispatching analysis.")
+            msg = self.create_message(
+                to=self.analysis_agent_jid,
+                msg_type="request",
+                action="analyze",
+                payload={
+                    "raw_data": job["raw_data"],
+                    "psp_results": job["psp_results"],
+                    "processing_results": job["processing_results"],
+                },
+                job_id=job_id,
+            )
+            await self.send(msg)
 
-			pdb_text = ""
-			if best_model == "colabfold_modal":
-				pdb_text = psp_results.get("colabfold_modal", {}).get("pdb", "")
-			elif best_model == "alphafold_db":
-				pdb_text = raw_data.get("alphafold", {}).get("pdb_text", "")
-			else:
-				pdb_text = psp_results.get("esmfold", {}).get("pdb", "")
+        elif action == "analyzed":
+            job["analysis_results"] = agent_msg.payload.get("analysis")
+            job["status"] = "synthesizing"
+            summary = (job["analysis_results"] or {}).get("summary", "")
+            await self._log(job, f"Analysis complete. {summary}")
+            msg = self.create_message(
+                to=self.synthesis_agent_jid,
+                msg_type="request",
+                action="synthesize",
+                payload={
+                    "raw_data": job["raw_data"],
+                    "psp_results": job["psp_results"],
+                    "processing_results": job["processing_results"],
+                    "analysis_results": job["analysis_results"],
+                },
+                job_id=job_id,
+            )
+            await self.send(msg)
 
-			plddt_per_residue = (job.get("processing_results") or {}).get(
-				"plddt_per_residue", {}
-			)
+        elif action == "synthesized":
+            job["synthesis_results"] = agent_msg.payload.get("synthesis")
+            job["status"] = "detecting_pockets"
 
-			print(f"[{job_id}] Synthesis complete. Dispatching pocket detection on {best_model} structure.")
-			msg = self.create_message(
-				to=self.pocket_agent_jid,
-				msg_type="request",
-				action="detect_pockets",
-				payload={
-					"pdb_text": pdb_text,
-					"plddt_per_residue": plddt_per_residue,
-					"best_model_source": job["synthesis_results"].get("best_model_source", best_model),
-				},
-				job_id=job_id,
-			)
-			await self.send(msg)
+            best_model = job["synthesis_results"].get("best_model", "esmfold")
+            psp_results = job.get("psp_results", {})
+            raw_data = job.get("raw_data", {})
 
-		elif action == "pockets_detected":
-			job["pocket_results"] = agent_msg.payload
-			job["status"] = "generating_output"
-			pocket_count = agent_msg.payload.get("pocket_summary", {}).get("high_confidence", 0)
-			print(f"[{job_id}] Pocket detection complete: {pocket_count} high-confidence pockets. Generating output.")
-			accession = job["input_value"] if job["input_type"] == "accession" else job_id
-			msg = self.create_message(
-				to=self.output_agent_jid,
-				msg_type="request",
-				action="generate_output",
-				payload={
-					"accession": accession,
-					"raw_data": job["raw_data"],
-					"psp_results": job["psp_results"],
-					"processing_results": job["processing_results"],
-					"synthesis_results": job["synthesis_results"],
-					"analysis_results": job["analysis_results"],
-					"pocket_results": job["pocket_results"],
-				},
-				job_id=job_id,
-			)
-			await self.send(msg)
+            pdb_text = ""
+            if best_model == "colabfold_modal":
+                pdb_text = psp_results.get("colabfold_modal", {}).get("pdb", "")
+            elif best_model == "alphafold_db":
+                pdb_text = raw_data.get("alphafold", {}).get("pdb_text", "")
+            else:
+                pdb_text = psp_results.get("esmfold", {}).get("pdb", "")
 
-		elif action == "output_generated":
-			job["output_results"] = agent_msg.payload.get("output_path")
-			job["status"] = "completed"
-			print(f"Job {job_id} completed: {job['output_results']}")
-			
-			db_job_id = job.get("db_job_id")
-			if DatabaseConnection.engine is not None:
-				if db_job_id:
-					try:
-						await update_task(
-							db_job_id,
-							{"status": "completed", "output_path": job["output_results"]}
-						)
-					except Exception as e:
-						print(f"Failed to update task status: {e}")
-				
-				final_output = {
-					"accession": job["input_value"],
-					"status": "completed",
-					"timestamp": str(datetime.now()),
-					"output_path": job["output_results"],
-					"metrics": job.get("processing_results"),
-					"synthesis": job.get("synthesis_results"),
-					"uniprot": job["raw_data"].get("uniprot"),
-					"psp_results": job.get("psp_results"),
-					"models_used": job.get("models_used", []),
-					"psp_errors": job.get("psp_errors", {}),
-					"analysis": job.get("analysis_results"),
-					"pockets": job.get("pocket_results"),
-				}
-				try:
-					await upsert_protein_result(job["input_value"], final_output)
-					print(f"Saved final results to DB for {job['input_value']}")
-				except Exception as e:
-					print(f"Failed to save protein result: {e}")
+            plddt_per_residue = (job.get("processing_results") or {}).get("plddt_per_residue", {})
+            await self._log(job, f"Synthesis complete. Best model: {best_model}. Running pocket detection.")
+
+            msg = self.create_message(
+                to=self.pocket_agent_jid,
+                msg_type="request",
+                action="detect_pockets",
+                payload={
+                    "pdb_text": pdb_text,
+                    "plddt_per_residue": plddt_per_residue,
+                    "best_model_source": job["synthesis_results"].get("best_model_source", best_model),
+                },
+                job_id=job_id,
+            )
+            await self.send(msg)
+
+        elif action == "pockets_detected":
+            job["pocket_results"] = agent_msg.payload
+            job["status"] = "generating_output"
+            pocket_count = agent_msg.payload.get("pocket_summary", {}).get("high_confidence", 0)
+            await self._log(job, f"Pocket detection done. {pocket_count} high-confidence pockets. Generating output.")
+
+            accession = job["input_value"] if job["input_type"] == "accession" else job_id
+            msg = self.create_message(
+                to=self.output_agent_jid,
+                msg_type="request",
+                action="generate_output",
+                payload={
+                    "accession": accession,
+                    "raw_data": job["raw_data"],
+                    "psp_results": job["psp_results"],
+                    "processing_results": job["processing_results"],
+                    "synthesis_results": job["synthesis_results"],
+                    "analysis_results": job["analysis_results"],
+                    "pocket_results": job["pocket_results"],
+                },
+                job_id=job_id,
+            )
+            await self.send(msg)
+
+        elif action == "output_generated":
+            job["output_results"] = agent_msg.payload.get("output_path")
+            job["status"] = "completed"
+            await self._log(job, f"Pipeline complete. Output: {job['output_results']}")
+
+            db_job_id = job.get("db_job_id")
+            if DatabaseConnection.engine is not None and db_job_id:
+                try:
+                    await complete_task(db_job_id, output_path=job["output_results"])
+                except Exception as e:
+                    print(f"Failed to mark task complete: {e}")
+
+                final_output = {
+                    "accession": job["input_value"],
+                    "task_id": int(db_job_id) if db_job_id else None,
+                    "status": "completed",
+                    "timestamp": datetime.now(timezone.utc),
+                    "output_path": job["output_results"],
+                    "metrics": job.get("processing_results"),
+                    "synthesis": job.get("synthesis_results"),
+                    "uniprot": job["raw_data"].get("uniprot"),
+                    "psp_results": job.get("psp_results"),
+                    "models_used": job.get("models_used", []),
+                    "psp_errors": job.get("psp_errors", {}),
+                    "analysis": job.get("analysis_results"),
+                    "pockets": job.get("pocket_results"),
+                }
+                try:
+                    await upsert_protein_result(job["input_value"], final_output)
+                    print(f"Saved final results to DB for {job['input_value']}")
+                except Exception as e:
+                    print(f"Failed to save protein result: {e}")
+
+        elif action == "error":
+            error_msg = agent_msg.payload.get("error", "Unknown error")
+            job["status"] = "failed"
+            await self._log(job, f"Pipeline error: {error_msg}", level="error")
+
+            db_job_id = job.get("db_job_id")
+            if DatabaseConnection.engine is not None and db_job_id:
+                try:
+                    await fail_task(db_job_id, error_message=error_msg)
+                except Exception as e:
+                    print(f"Failed to mark task failed: {e}")
 
 
 class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, coordinator):
-		super().__init__()
-		self.coordinator = coordinator
+    def __init__(self, coordinator):
+        super().__init__()
+        self.coordinator = coordinator
 
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.coordinator.parse_message(msg)
-			await self.coordinator.handle_response(agent_msg)
+    async def run(self):
+        msg = await self.receive(timeout=10)
+        if msg:
+            agent_msg = self.coordinator.parse_message(msg)
+            await self.coordinator.handle_response(agent_msg)
+
 
 class CheckDatabaseForJobsBehaviour(PeriodicBehaviour):
-	async def run(self):
-		if DatabaseConnection.engine is None:
-			return
-		
-		try:
-			pending_job = await claim_pending_job()
-		except Exception as e:
-			print(f"DB poll error: {e}")
-			return
-		
-		if pending_job:
-			accession = pending_job.get("input_value")
-			input_type = pending_job.get("input_type", "accession")
-			db_job_id = str(pending_job["id"])
-			print(f"Coordinator: Picked up job {db_job_id} for {accession} ({input_type})")
-			
-			await self.agent.start_job(
-				input_type=input_type,
-				input_value=accession,
-				db_job_id=db_job_id
-			)
+    async def run(self):
+        if DatabaseConnection.engine is None:
+            return
+
+        try:
+            pending_job = await claim_pending_job()
+        except Exception as e:
+            print(f"DB poll error: {e}")
+            return
+
+        if pending_job:
+            accession = pending_job.get("input_value")
+            input_type = pending_job.get("input_type", "accession")
+            db_job_id = str(pending_job["id"])
+            print(f"Coordinator: Picked up job {db_job_id} for {str(accession)[:60]} ({input_type})")
+
+            await self.agent.start_job(
+                input_type=input_type,
+                input_value=accession,
+                db_job_id=db_job_id,
+            )
