@@ -35,6 +35,7 @@ plan.md
 docker-compose.yml
 prosody/prosody.cfg.lua
 venv/
+.venv/
 .python-version
 /output/*.html
 /output/*.json
