@@ -23,15 +23,30 @@ class ModalAgent(BaseAgent):
 		print(f"[{job_id}] ModalAgent: Spawning remote ColabFold job...")
 		
 		try:
-			remote_func = modal.Function.from_name("psp-colabfold-worker", "predict_structure_remote")
-			function_call = remote_func.spawn(sequence, job_id)
+			def _spawn_call():
+				remote_func = modal.Function.from_name("psp-colabfold-worker", "predict_structure_remote")
+				return remote_func.spawn(sequence, job_id)
+
+			function_call = await asyncio.wait_for(asyncio.to_thread(_spawn_call), timeout=20)
 			
 			self.active_calls[job_id] = function_call
 			print(f"[{job_id}] Started Modal Job ID: {function_call.object_id}")
 			
 		except Exception as e:
 			print(f"[{job_id}] Failed to spawn Modal job: {e}")
-			# TODO: Send error back to coordinator
+			payload = {
+				"results": {},
+				"models_used": [],
+				"errors": {"colabfold_modal": str(e)}
+			}
+			msg = self.create_message(
+				to=self.coordinator_jid,
+				msg_type="response",
+				action="structure_predicted",
+				payload=payload,
+				job_id=job_id,
+			)
+			await self.send(msg)
 
 class MessageHandlerBehaviour(CyclicBehaviour):
 	def __init__(self, agent):

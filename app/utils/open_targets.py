@@ -36,7 +36,8 @@ def _graphql(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
             headers={"Content-Type": "application/json"},
             timeout=30,
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Open Targets API HTTP {resp.status_code}: {resp.text[:500]}")
         data = resp.json()
         if "errors" in data:
             raise RuntimeError(f"GraphQL errors: {data['errors']}")
@@ -52,7 +53,7 @@ def _search_disease(disease_name: str) -> Optional[Dict[str, Any]]:
     """
     query = """
     query DiseaseSearch($query: String!) {
-        search(queryString: $query, entityNames: ["disease"], page: {index: 0, size: 3}) {
+        search(queryString: $query, page: {index: 0, size: 8}) {
             hits {
                 id
                 name
@@ -83,8 +84,9 @@ def _fetch_associated_targets(disease_id: str, limit: int = 10) -> List[Dict[str
                         id
                         approvedSymbol
                         approvedName
-                        proteinAnnotations {
-                            accessions
+                        proteinIds {
+                            id
+                            source
                         }
                     }
                     score
@@ -108,12 +110,23 @@ def _fetch_associated_targets(disease_id: str, limit: int = 10) -> List[Dict[str
         score = round(row.get("score", 0.0), 4)
         target_id = target.get("id", "")
 
-        # Try to get UniProt accession directly from the annotation
-        accessions: List[str] = (
-            (target.get("proteinAnnotations") or {}).get("accessions", [])
-        )
-        # The first accession is typically the canonical UniProt entry
-        uniprot_accession = accessions[0] if accessions else None
+        # New schema: target.proteinIds contains UniProt candidates.
+        # Prefer curated Swiss-Prot entries when available.
+        protein_ids = target.get("proteinIds") or []
+        uniprot_accession = None
+        for item in protein_ids:
+            pid = item.get("id")
+            source = (item.get("source") or "").lower()
+            if isinstance(pid, str) and pid and source == "uniprot_swissprot":
+                uniprot_accession = pid
+                break
+        if not uniprot_accession:
+            for item in protein_ids:
+                pid = item.get("id")
+                source = (item.get("source") or "").lower()
+                if isinstance(pid, str) and pid and source.startswith("uniprot"):
+                    uniprot_accession = pid
+                    break
 
         if gene and score > 0:
             targets.append({

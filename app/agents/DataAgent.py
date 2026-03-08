@@ -23,20 +23,32 @@ class DataAgent(BaseAgent):
 
 		print(f"[{job_id}] DataAgent: fetching data for {input_type}: {input_value[:80]}...")
 
-		if input_type == "fasta":
-			data = self._fetch_by_fasta(input_value)
-		elif input_type == "disease":
-			data = self._fetch_by_disease(input_value)
-		else:
-			data = self._fetch_by_accession(input_value, include_pubmed)
+		try:
+			if input_type == "fasta":
+				data = self._fetch_by_fasta(input_value)
+			elif input_type == "disease":
+				data = self._fetch_by_disease(input_value)
+			else:
+				data = self._fetch_by_accession(input_value, include_pubmed)
 
-		msg = self.create_message(
-			to=self.coordinator_jid,
-			msg_type="response",
-			action="data_fetched",
-			payload={"data": data},
-			job_id=job_id,
-		)
+			msg = self.create_message(
+				to=self.coordinator_jid,
+				msg_type="response",
+				action="data_fetched",
+				payload={"data": data},
+				job_id=job_id,
+			)
+		except Exception as e:
+			error_msg = f"Data fetch failed ({input_type}:{input_value}): {e}"
+			print(f"[{job_id}] {error_msg}")
+			msg = self.create_message(
+				to=self.coordinator_jid,
+				msg_type="response",
+				action="error",
+				payload={"error": error_msg},
+				job_id=job_id,
+			)
+
 		await self.send(msg)
 
 	def _fetch_by_fasta(self, fasta_content: str) -> dict:

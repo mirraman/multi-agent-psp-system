@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import datetime, timezone
 from app.agents.BaseAgent import BaseAgent, AgentMessage
@@ -171,8 +172,9 @@ class CoordinatorAgent(BaseAgent):
                 return
             await self._log(job, f"Data fetched. Sequence length={len(sequence)}. Routing to structure predictor.")
 
-            if len(sequence) > 400:
-                await self._log(job, f"Sequence > 400aa — routing to Modal/ColabFold")
+            use_modal = os.getenv("ENABLE_MODAL", "0") == "1"
+            if len(sequence) > 400 and use_modal:
+                await self._log(job, f"Sequence > 400aa — routing to Modal/ColabFold (ENABLE_MODAL=1)")
                 msg = self.create_message(
                     to=self.modal_agent_jid,
                     msg_type="request",
@@ -181,7 +183,14 @@ class CoordinatorAgent(BaseAgent):
                     job_id=job_id,
                 )
             else:
-                await self._log(job, f"Sequence <= 400aa — routing to ESMFold")
+                if len(sequence) > 400:
+                    await self._log(
+                        job,
+                        "Sequence > 400aa but ENABLE_MODAL!=1 — routing to ESMFold fallback",
+                        level="warning",
+                    )
+                else:
+                    await self._log(job, "Sequence <= 400aa — routing to ESMFold")
                 msg = self.create_message(
                     to=self.psp_agent_jid,
                     msg_type="request",
@@ -196,6 +205,30 @@ class CoordinatorAgent(BaseAgent):
             job["models_used"] = agent_msg.payload.get("models_used", [])
             job["psp_errors"] = agent_msg.payload.get("errors", {})
             job["status"] = "processing"
+
+            # Modal fallback: if long-sequence ColabFold path failed to produce
+            # any model, retry once through ESMFold instead of hanging/aborting.
+            if not job["models_used"] and not job.get("esmfold_fallback_attempted"):
+                modal_error = (job["psp_errors"] or {}).get("colabfold_modal")
+                if modal_error:
+                    sequence = (job.get("raw_data") or {}).get("uniprot", {}).get("sequence", "")
+                    if sequence:
+                        job["esmfold_fallback_attempted"] = True
+                        job["status"] = "predicting_structure"
+                        await self._log(
+                            job,
+                            "Modal/ColabFold unavailable. Falling back to ESMFold for this job.",
+                            level="warning",
+                        )
+                        msg = self.create_message(
+                            to=self.psp_agent_jid,
+                            msg_type="request",
+                            action="predict_structure",
+                            payload={"sequence": sequence},
+                            job_id=job_id,
+                        )
+                        await self.send(msg)
+                        return
 
             models_str = ", ".join(job["models_used"]) if job["models_used"] else "none"
             await self._log(job, f"Structure predicted. Models used: {models_str}")

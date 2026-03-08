@@ -117,6 +117,14 @@ def fetch_uniprot(accession: str) -> Dict[str, Any]:
     if isinstance(rec_name, dict):
         name = rec_name.get("value") or ""
 
+    pdb_ids: List[str] = []
+    for ref in data.get("uniProtKBCrossReferences", []) or []:
+        if ref.get("database") != "PDB":
+            continue
+        pdb_id = ref.get("id")
+        if isinstance(pdb_id, str) and pdb_id:
+            pdb_ids.append(pdb_id)
+
     return {
         "sequence": sequence,
         "name": name,
