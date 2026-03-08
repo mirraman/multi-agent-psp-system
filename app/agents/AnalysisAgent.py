@@ -94,10 +94,7 @@ class AnalysisAgent(BaseAgent):
 		if modal_pdb:
 			structures["colabfold_modal"] = modal_pdb
 		
-		alphafold_data = raw_data.get("alphafold", {})
-		alphafold_pdb = alphafold_data.get("pdb_text", "")
-		if alphafold_pdb:
-			structures["alphafold_db"] = alphafold_pdb
+
 
 		model_names = list(structures.keys())
 		analysis["models_compared"] = model_names
