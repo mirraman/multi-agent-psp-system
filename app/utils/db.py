@@ -115,7 +115,12 @@ class DatabaseConnection:
             class_=AsyncSession,
             expire_on_commit=False,
         )
-        await cls._create_tables()
+        try:
+            await cls._create_tables()
+        except Exception:
+            # Avoid leaving a half-initialized connection state.
+            await cls.close()
+            raise
 
     @classmethod
     async def close(cls) -> None:
@@ -135,7 +140,11 @@ class DatabaseConnection:
         if cls.engine is None:
             return
         async with cls.engine.begin() as conn:
-            await conn.execute(text(_DDL))
+            for statement in _DDL.split(";"):
+                stmt = statement.strip()
+                if not stmt:
+                    continue
+                await conn.execute(text(f"{stmt};"))
 
 
 # ---------------------------------------------------------------------------
