@@ -20,13 +20,6 @@ wheels/
 .installed.cfg
 *.egg
 
-# Environment
-.env
-.venv
-env/
-venv/
-ENV/
-
 # IDE
 .idea/
 .vscode/
@@ -48,3 +41,5 @@ venv/
 /output/*.pdb
 /data/outputs
 README.md
+
+.env
