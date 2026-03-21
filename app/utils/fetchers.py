@@ -158,6 +158,42 @@ def fetch_pdb(pdb_id: str) -> Dict[str, Any]:
     return {"metadata": metadata, "download_url": download_url}
 
 
+def fetch_pdb_text(pdb_id: str) -> str:
+    """Download PDB file text from RCSB."""
+    pid = pdb_id.strip().upper()
+    return _get_text(f"https://files.rcsb.org/download/{pid}.pdb")
+
+
+def fetch_alphafold_db_pdb(accession: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch AlphaFold DB model (EBI) for a UniProt accession.
+    Returns None if not found or on error.
+    """
+    acc = accession.strip().upper()
+    url = f"https://alphafold.ebi.ac.uk/files/AF-{acc}-F1-model_v4.pdb"
+    try:
+        pdb_text = _get_text(url)
+    except HttpError as exc:
+        if exc.status_code == 404:
+            logger.info("No AlphaFold DB entry for %s", acc)
+            return None
+        logger.warning("AlphaFold DB fetch failed for %s: %s", acc, exc)
+        return None
+    except Exception as exc:
+        logger.warning("AlphaFold DB fetch failed for %s: %s", acc, exc)
+        return None
+
+    if not pdb_text or not pdb_text.strip():
+        return None
+
+    mean_p, _, _ = _plddt_from_pdb_text(pdb_text)
+    return {
+        "pdb": pdb_text,
+        "source": "AlphaFold DB (EBI)",
+        "mean_plddt": mean_p,
+    }
+
+
 
 def fetch_pubmed(query: str, api_key: Optional[str] = None, retmax: int = 10) -> Dict[str, Any]:
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"

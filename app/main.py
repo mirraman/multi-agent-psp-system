@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -82,24 +82,71 @@ def _require_db():
         raise HTTPException(status_code=503, detail="Database unavailable")
 
 
-@app.post("/jobs", status_code=201)
-async def create_job(body: JobSubmitRequest) -> Dict[str, Any]:
+async def _create_job_impl(body: JobSubmitRequest) -> Dict[str, Any]:
     """
-    Submit a protein analysis job.
+    Submit one or more protein analysis jobs.
 
-    Provide either:
-    - `sequence`: raw amino-acid string (FASTA without header, or with '>header' prefix)
-    - `accession`: UniProt accession ID (e.g. 'P12345')
+    Disease mode: queues top 5 Open Targets accessions as separate tasks (dataset batch).
     """
     _require_db()
 
     if body.disease:
-        input_type = "disease"
-        input_value = body.disease.strip()
-    elif body.sequence:
+        from app.utils.open_targets import fetch_disease_targets
+
+        try:
+            resolved = fetch_disease_targets(body.disease.strip(), limit=5)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        targets = resolved["targets"][:5]
+        if not targets:
+            raise HTTPException(status_code=400, detail="Disease lookup returned no targets")
+        dataset_id = await insert_dataset(
+            name=resolved.get("disease_name") or body.disease.strip(),
+            filename="disease_batch",
+            total_jobs=len(targets),
+        )
+        job_entries: List[Dict[str, Any]] = []
+        for t in targets:
+            acc = t.get("accession")
+            if not acc:
+                continue
+            jid = await insert_task(
+                {
+                    "type": body.type,
+                    "input_type": "accession",
+                    "input_value": acc,
+                    "status": "queued",
+                    "created_at": datetime.now(),
+                    "dataset_id": int(dataset_id),
+                }
+            )
+            job_entries.append(
+                {
+                    "job_id": int(jid),
+                    "accession": acc,
+                    "gene_symbol": t.get("gene_symbol"),
+                }
+            )
+        logger.info(
+            "Disease batch created: dataset_id=%s jobs=%d",
+            dataset_id,
+            len(job_entries),
+        )
+        return {
+            "batch_job_id": dataset_id,
+            "dataset_id": dataset_id,
+            "disease_id": resolved.get("disease_id"),
+            "disease_name": resolved.get("disease_name"),
+            "job_ids": [e["job_id"] for e in job_entries],
+            "jobs": job_entries,
+            "status": "queued",
+            "input_type": "disease_batch",
+            "message": f"Queued {len(job_entries)} protein jobs for disease batch",
+        }
+
+    if body.sequence:
         raw = body.sequence.strip()
         if raw.startswith(">"):
-            # Single-entry FASTA — strip the header
             lines = raw.splitlines()
             sequence = "".join(l for l in lines[1:] if not l.startswith(">")).replace(" ", "")
         else:
@@ -134,6 +181,48 @@ async def create_job(body: JobSubmitRequest) -> Dict[str, Any]:
         "input_type": input_type,
         "message": f"Job queued — CoordinatorAgent will pick it up within 5s",
     }
+
+
+@app.post("/jobs", status_code=201)
+async def create_job(body: JobSubmitRequest) -> Dict[str, Any]:
+    """
+    Submit a protein analysis job.
+
+    Provide either:
+    - `sequence`: raw amino-acid string (FASTA without header, or with '>header' prefix)
+    - `accession`: UniProt accession ID (e.g. 'P12345')
+    - `disease`: disease name — queues top 5 Open Targets accessions as separate jobs (batch dataset)
+    """
+    return await _create_job_impl(body)
+
+
+v1_router = APIRouter(prefix="/v1", tags=["v1"])
+
+
+@v1_router.post("/jobs", status_code=201)
+async def create_job_v1(body: JobSubmitRequest) -> Dict[str, Any]:
+    """Primary API: same body as POST /jobs (accession, disease, or sequence)."""
+    return await _create_job_impl(body)
+
+
+@v1_router.get("/batches/{batch_id}")
+async def get_batch_v1(batch_id: int) -> Dict[str, Any]:
+    """Aggregate status for a disease batch (dataset)."""
+    _require_db()
+    ds = await get_dataset(batch_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
+    if ds.get("created_at") and hasattr(ds["created_at"], "isoformat"):
+        ds["created_at"] = ds["created_at"].isoformat()
+    jobs = await get_dataset_jobs(batch_id)
+    for job in jobs:
+        for field in ("created_at", "start_time", "end_time"):
+            if job.get(field) and hasattr(job[field], "isoformat"):
+                job[field] = job[field].isoformat()
+    return {"dataset_id": batch_id, **ds, "jobs": jobs}
+
+
+app.include_router(v1_router)
 
 
 @app.get("/jobs/{job_id}")

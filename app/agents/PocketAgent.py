@@ -31,7 +31,7 @@ Payload sent:
 """
 
 import logging
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from spade.behaviour import CyclicBehaviour
 
@@ -69,6 +69,10 @@ class PocketAgent(BaseAgent):
             int(k): float(v) for k, v in raw_plddt.items()
         }
         best_model_source: str = payload.get("best_model_source", "unknown")
+        best_model: str = payload.get("best_model", "esmfold")
+        fallback_plddt = payload.get("fallback_plddt_mean")
+        if not isinstance(fallback_plddt, (int, float)):
+            fallback_plddt = None
 
         model_names = [name for name, pdb in models_payload.items() if pdb]
         logger.info("[%s] PocketAgent: running fpocket on models=%s", job_id, model_names or [best_model_source])
@@ -102,7 +106,13 @@ class PocketAgent(BaseAgent):
                     reason = f"{reason}: {model_errors}"
                 result_payload = _empty_pocket_result(reason)
             else:
-                result_payload = _process_pockets(pockets_by_model, plddt_per_residue, job_id)
+                result_payload = _process_pockets(
+                    pockets_by_model,
+                    plddt_per_residue,
+                    job_id,
+                    best_model=best_model,
+                    fallback_plddt_mean=fallback_plddt,
+                )
                 if model_errors:
                     result_payload["model_errors"] = model_errors
 
@@ -126,6 +136,8 @@ def _process_pockets(
     pockets_by_model: Dict[str, List[Dict[str, Any]]],
     plddt_per_residue: Dict[int, float],
     job_id: str,
+    best_model: str = "esmfold",
+    fallback_plddt_mean: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Enrich raw fpocket output with pLDDT filtering and composite scoring.
@@ -139,7 +151,7 @@ def _process_pockets(
     """
     enriched: List[Dict[str, Any]] = []
     filtered_count = 0
-    consensus_count = 0
+    consensus_residue_sets: Set = set()
 
     per_model_enriched: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -155,15 +167,20 @@ def _process_pockets(
             if plddt_values:
                 local_plddt = sum(plddt_values) / len(plddt_values)
             else:
-                # No pLDDT data for this pocket's residues — treat as low confidence
-                local_plddt = 0.0
-                logger.debug(
-                    "[%s] %s pocket %d: no pLDDT data for residues %s",
-                    job_id,
-                    model_name,
-                    pocket["pocket_id"],
-                    residues[:5],
-                )
+                # Experimental structures: B-factors may not match prediction numbering; use fallback mean.
+                if fallback_plddt_mean is not None:
+                    local_plddt = float(fallback_plddt_mean)
+                elif best_model in ("experimental",) and model_name == "experimental":
+                    local_plddt = 85.0
+                else:
+                    local_plddt = 0.0
+                    logger.debug(
+                        "[%s] %s pocket %d: no pLDDT data for residues %s",
+                        job_id,
+                        model_name,
+                        pocket["pocket_id"],
+                        residues[:5],
+                    )
 
             confident = local_plddt >= PLDDT_CONFIDENCE_THRESHOLD
             druggability = pocket.get("druggability_score", 0.0)
@@ -216,7 +233,7 @@ def _process_pockets(
 
             is_consensus = len(seen_in_models) > 1
             if is_consensus:
-                consensus_count += 1
+                consensus_residue_sets.add(frozenset(residues_a))
             pocket["ensemble_agreement"] = {
                 "seen_in_models": sorted(seen_in_models),
                 "jaccard_similarity": round(best_jaccard, 4),
@@ -225,6 +242,9 @@ def _process_pockets(
 
             druggability = float(pocket.get("druggability_score", 0.0))
             local_plddt = float(pocket.get("local_plddt_mean", 0.0))
+            if local_plddt <= 0.0 and fallback_plddt_mean is not None:
+                local_plddt = float(fallback_plddt_mean)
+                pocket["local_plddt_mean"] = round(local_plddt, 2)
             jaccard_bonus = best_jaccard
             composite = druggability * (local_plddt / 100.0) * (1 + 0.3 * jaccard_bonus)
             pocket["composite_score"] = round(composite, 4)
@@ -245,7 +265,7 @@ def _process_pockets(
             "total_detected": len(enriched),
             "high_confidence": len(high_confidence),
             "filtered_low_plddt": filtered_count,
-            "consensus_pockets": consensus_count,
+            "consensus_pockets": len(consensus_residue_sets),
             "models_processed": list(pockets_by_model.keys()),
         },
     }

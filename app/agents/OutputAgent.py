@@ -1,10 +1,41 @@
 import os
 import json
 from datetime import datetime, UTC
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from app.agents.BaseAgent import BaseAgent
 from spade.behaviour import CyclicBehaviour
+
+
+def _resolve_structure_pdb_for_viewer(
+	best_model: str,
+	psp_results: Dict[str, Any],
+	raw_data: Dict[str, Any],
+) -> Tuple[str, str]:
+	"""Return PDB text and display label for the synthesis best_model."""
+	if best_model == "colabfold_modal":
+		txt = (psp_results.get("colabfold_modal") or {}).get("pdb", "") or ""
+		return txt, "ColabFold/Modal (cloud)"
+	if best_model == "alphafold_db":
+		txt = (psp_results.get("alphafold_db") or {}).get("pdb", "") or ""
+		return txt, "AlphaFold DB (EBI)"
+	if best_model == "experimental":
+		exp = psp_results.get("experimental") or {}
+		txt = exp.get("pdb", "") or ""
+		if not txt:
+			exp_alt = raw_data.get("experimental_best_pdb") or {}
+			txt = exp_alt.get("pdb_text", "") or ""
+		pid = exp.get("pdb_id") or (raw_data.get("experimental_best_pdb") or {}).get("pdb_id")
+		label = f"Experimental PDB ({pid})" if pid else "Experimental PDB"
+		return txt, label
+	if best_model == "esmfold" or not best_model or best_model == "none":
+		txt = (psp_results.get("esmfold") or {}).get("pdb", "") or ""
+		if not txt and best_model != "none":
+			txt = (psp_results.get("colabfold_modal") or {}).get("pdb", "") or ""
+		if not txt:
+			txt = (psp_results.get("alphafold_db") or {}).get("pdb", "") or ""
+		return txt, "ESMFold prediction"
+	return "", "Unknown Source"
 
 
 class OutputAgent(BaseAgent):
@@ -60,6 +91,7 @@ class OutputAgent(BaseAgent):
 			"timestamp": timestamp,
 			"uniprot": raw_data.get("uniprot"),
 			"pdb": raw_data.get("pdb"),
+			"raw_data": raw_data,
 			"esmfold": psp_results,
 			"metrics": processing_results,
 			"synthesis": synthesis_results,
@@ -71,9 +103,12 @@ class OutputAgent(BaseAgent):
 		with open(json_path, "w") as f:
 			json.dump(output_doc, f, indent=2)
 
-		pdb_text = psp_results.get("esmfold", {}).get("pdb", "")
+		synth = synthesis_results or {}
+		bm = synth.get("best_model", "esmfold")
+		pdb_text, _src = _resolve_structure_pdb_for_viewer(bm, psp_results, raw_data)
 		if pdb_text:
-			pdb_path = os.path.join(self.output_dir, f"{accession}_esmfold.pdb")
+			suffix = bm if bm else "model"
+			pdb_path = os.path.join(self.output_dir, f"{accession}_{suffix}.pdb")
 			with open(pdb_path, "w") as f:
 				f.write(pdb_text)
 
@@ -89,23 +124,34 @@ class OutputAgent(BaseAgent):
 		synthesis = output_doc.get("synthesis") or {}
 		analysis = output_doc.get("analysis") or {}
 		psp_results = output_doc.get("esmfold") or {}
-		pockets = output_doc.get("pockets") or {}
+		pocket_data = output_doc.get("pockets") or {}
+		pocket_list = pocket_data.get("pockets", [])
 
 		best_model = synthesis.get("best_model", "esmfold")
-		pdb_text = ""
-		source_display = "Unknown Source"
-		
-		if best_model == "colabfold_modal":
-			modal_data = psp_results.get("colabfold_modal", {})
-			pdb_text = modal_data.get("pdb", "")
-			source_display = "ColabFold/Modal (cloud)"
-		else:
-			esmfold_data = psp_results.get("esmfold", {})
-			pdb_text = esmfold_data.get("pdb", "")
-			source_display = "ESMFold Prediction"
-			
+		pdb_text, source_display = _resolve_structure_pdb_for_viewer(
+			best_model, psp_results, output_doc.get("raw_data") or {}
+		)
 		pdb_escaped = pdb_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-		
+
+		def _rank_key(p: Dict[str, Any]) -> int:
+			r = p.get("rank", p.get("pocket_id", 999))
+			try:
+				return int(r)
+			except (TypeError, ValueError):
+				return 999
+
+		top_pockets: List[Dict[str, Any]] = sorted(pocket_list, key=_rank_key)[:8]
+		pocket_viz_json = json.dumps(
+			[
+				{
+					"rank": p.get("rank", p.get("pocket_id")),
+					"residues": p.get("residues") or [],
+				}
+				for p in top_pockets
+			]
+		)
+		pocket_viz_escaped = pocket_viz_json.replace("</", "<\\/")
+
 		esmfold_plddt = metrics.get("esmfold_plddt_mean")
 		esmfold_plddt_str = f"{esmfold_plddt:.2f}" if isinstance(esmfold_plddt, (int, float)) else "N/A"
 
@@ -124,8 +170,6 @@ class OutputAgent(BaseAgent):
 		consensus_status = "Yes" if has_consensus else "No"
 
 		# ── Pocket html ───────────────────────────────────────────────────────
-		pocket_data = output_doc.get("pockets") or {}
-		pocket_list = pocket_data.get("pockets", [])
 		pocket_summary_data = pocket_data.get("pocket_summary", {})
 		total_pockets = pocket_summary_data.get("total_detected", 0)
 		high_conf_count = pocket_summary_data.get("high_confidence", 0)
@@ -334,10 +378,21 @@ class OutputAgent(BaseAgent):
             }});
             
             let pdbData = `{pdb_escaped}`;
+            let pocketViz = {pocket_viz_escaped};
+            let pocketColors = ['#ff6b6b', '#4ecdc4', '#ffe66d', '#a78bfa', '#fb7185', '#22d3ee', '#f472b6', '#34d399'];
             
             if (pdbData && pdbData.trim()) {{
                 viewer.addModel(pdbData, 'pdb');
                 viewer.setStyle({{}}, {{cartoon: {{color: 'spectrum'}}}});
+                if (pocketViz && pocketViz.length) {{
+                    pocketViz.forEach(function(pk, idx) {{
+                        let res = pk.residues || [];
+                        if (!res.length) return;
+                        let sel = {{resi: res}};
+                        let col = pocketColors[idx % pocketColors.length];
+                        viewer.addStyle(sel, {{stick: {{color: col, radius: 0.15}}}});
+                    }});
+                }}
                 viewer.zoomTo();
                 viewer.render();
             }} else {{

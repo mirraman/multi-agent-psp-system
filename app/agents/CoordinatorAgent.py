@@ -220,10 +220,35 @@ class CoordinatorAgent(BaseAgent):
             await self.send(msg)
 
         elif action == "structure_predicted":
-            job["psp_results"] = agent_msg.payload.get("results", {})
+            job["psp_results"] = agent_msg.payload.get("results", {}) or {}
             job["models_used"] = agent_msg.payload.get("models_used", [])
             job["psp_errors"] = agent_msg.payload.get("errors", {})
             job["status"] = "processing"
+
+            raw_data = job.get("raw_data") or {}
+            af = raw_data.get("alphafold_db") or {}
+            if isinstance(af, dict) and af.get("pdb"):
+                job["psp_results"]["alphafold_db"] = {
+                    "pdb": af["pdb"],
+                    "source": af.get("source", "AlphaFold DB (EBI)"),
+                    "mean_plddt": af.get("mean_plddt"),
+                }
+                mu = list(job["models_used"] or [])
+                if "alphafold_db" not in mu:
+                    mu.append("alphafold_db")
+                    job["models_used"] = mu
+            exp = raw_data.get("experimental_best_pdb") or {}
+            if isinstance(exp, dict) and exp.get("pdb_text"):
+                job["psp_results"]["experimental"] = {
+                    "pdb": exp["pdb_text"],
+                    "pdb_id": exp.get("pdb_id"),
+                    "resolution": exp.get("resolution"),
+                    "source": "Experimental PDB",
+                }
+                mu = list(job["models_used"] or [])
+                if "experimental" not in mu:
+                    mu.append("experimental")
+                    job["models_used"] = mu
 
             # Modal fallback: if long-sequence ColabFold path failed to produce
             # any model, retry once through ESMFold instead of hanging/aborting.
@@ -311,9 +336,15 @@ class CoordinatorAgent(BaseAgent):
             model_payload = {
                 "esmfold": psp_results.get("esmfold", {}).get("pdb", ""),
                 "colabfold_modal": psp_results.get("colabfold_modal", {}).get("pdb", ""),
+                "alphafold_db": psp_results.get("alphafold_db", {}).get("pdb", ""),
+                "experimental": psp_results.get("experimental", {}).get("pdb", ""),
             }
 
-            plddt_per_residue = (job.get("processing_results") or {}).get("plddt_per_residue", {})
+            proc = job.get("processing_results") or {}
+            plddt_per_residue = proc.get("plddt_per_residue", {})
+            fallback_plddt = proc.get("esmfold_plddt_mean")
+            if not isinstance(fallback_plddt, (int, float)):
+                fallback_plddt = proc.get("alphafold_db_plddt_mean")
             await self._log(job, f"Synthesis complete. Best model: {best_model}. Running pocket detection.")
 
             msg = self.create_message(
@@ -324,6 +355,7 @@ class CoordinatorAgent(BaseAgent):
                     "models": model_payload,
                     "best_model": best_model,
                     "plddt_per_residue": plddt_per_residue,
+                    "fallback_plddt_mean": fallback_plddt,
                     "best_model_source": job["synthesis_results"].get("best_model_source", best_model),
                 },
                 job_id=job_id,

@@ -1,5 +1,11 @@
 from app.agents.BaseAgent import BaseAgent
-from app.utils.fetchers import fetch_uniprot, fetch_pdb, fetch_pubmed
+from app.utils.fetchers import (
+	fetch_uniprot,
+	fetch_pdb,
+	fetch_pubmed,
+	fetch_alphafold_db_pdb,
+	fetch_pdb_text,
+)
 from app.utils.open_targets import fetch_disease_targets
 from spade.behaviour import CyclicBehaviour
 from typing import Any, Dict, List
@@ -105,9 +111,41 @@ class DataAgent(BaseAgent):
 		pdb_results: List[Dict[str, Any]] = []
 		for pdb_id in uniprot_data.get("pdb_ids", []):
 			try:
-				pdb_results.append(fetch_pdb(pdb_id))
+				entry = fetch_pdb(pdb_id)
+				entry["pdb_id"] = pdb_id
+				pdb_results.append(entry)
 			except Exception:
 				continue
+
+		experimental_best: Dict[str, Any] = {}
+		best_res = None
+		best_entry = None
+		for entry in pdb_results:
+			meta = (entry or {}).get("metadata") or {}
+			res = meta.get("resolution")
+			if isinstance(res, (int, float)):
+				if best_res is None or res < best_res:
+					best_res = res
+					best_entry = entry
+		if best_entry and best_entry.get("pdb_id"):
+			try:
+				pdb_text = fetch_pdb_text(best_entry["pdb_id"])
+				if pdb_text and pdb_text.strip():
+					experimental_best = {
+						"pdb_id": best_entry["pdb_id"],
+						"pdb_text": pdb_text,
+						"resolution": best_res,
+					}
+			except Exception:
+				pass
+
+		alphafold_db: Dict[str, Any] = {}
+		try:
+			af = fetch_alphafold_db_pdb(accession)
+			if af:
+				alphafold_db = af
+		except Exception:
+			pass
 
 		pubmed_data = None
 		if include_pubmed:
@@ -124,6 +162,8 @@ class DataAgent(BaseAgent):
 			},
 			"pdb": pdb_results,
 			"pubmed": pubmed_data,
+			"experimental_best_pdb": experimental_best,
+			"alphafold_db": alphafold_db,
 		}
 
 

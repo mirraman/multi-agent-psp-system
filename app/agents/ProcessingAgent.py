@@ -81,8 +81,23 @@ class ProcessingAgent(BaseAgent):
 					results["plddt_per_residue"] = {
 						str(k): v for k, v in plddt_per_residue.items()
 					}
+			# AlphaFold DB model pLDDT (B-factors)
+			af_data = psp_results.get("alphafold_db", {})
+			af_pdb = af_data.get("pdb", "")
+			if af_pdb:
+				af_mean, af_per_res = self._extract_plddt_from_pdb(af_pdb)
+				if af_mean is not None:
+					results["alphafold_db_plddt_mean"] = af_mean
+					results["alphafold_confidence"] = round(af_mean, 2)
+				if af_per_res and "plddt_per_residue" not in results:
+					results["plddt_per_residue"] = {
+						str(k): v for k, v in af_per_res.items()
+					}
 		else:
 			results["esmfold_predicted"] = False
+
+		if "esmfold_predicted" not in results:
+			results["esmfold_predicted"] = bool((psp_results or {}).get("esmfold", {}).get("pdb"))
 
 		return results
 
