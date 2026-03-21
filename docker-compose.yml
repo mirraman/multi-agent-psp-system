@@ -40,6 +40,8 @@ services:
   xmpp:
     image: prosody/prosody:latest
     container_name: psp-xmpp
+    ports:
+      - "5222:5222"
     volumes:
       - ./xmpp/prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
       - prosody-data:/var/lib/prosody
@@ -52,6 +54,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: api
     container_name: psp-api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
@@ -76,6 +79,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: api
     container_name: psp-agents
     command: python -m app.AgentRunner
     environment:
@@ -111,7 +115,8 @@ services:
   celery:
     build:
       context: .
-      dockerfile: Dockerfile.celery
+      dockerfile: Dockerfile
+      target: celery
     container_name: psp-celery
     environment:
       - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db

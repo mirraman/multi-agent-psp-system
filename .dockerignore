@@ -32,3 +32,9 @@ Thumbs.db
 
 # Docs / artifacts
 *.md
+
+# fpocket vendored tree — build only needs sources (see Dockerfile COPY list)
+tmp_fpocket/tests/
+tmp_fpocket/data/
+tmp_fpocket/doc/
+tmp_fpocket/.git/
