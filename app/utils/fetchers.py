@@ -165,33 +165,27 @@ def fetch_pdb_text(pdb_id: str) -> str:
 
 
 def fetch_alphafold_db_pdb(accession: str) -> Optional[Dict[str, Any]]:
-    """
-    Fetch AlphaFold DB model (EBI) for a UniProt accession.
-    Returns None if not found or on error.
-    """
     acc = accession.strip().upper()
-    url = f"https://alphafold.ebi.ac.uk/files/AF-{acc}-F1-model_v4.pdb"
+    api_url = f"https://alphafold.ebi.ac.uk/api/prediction/{acc}"
     try:
-        pdb_text = _get_text(url)
-    except HttpError as exc:
-        if exc.status_code == 404:
-            logger.info("No AlphaFold DB entry for %s", acc)
+        api_data = _get_json(api_url)
+        print(f"[AF DEBUG] {acc} api_data type={type(api_data)} value={str(api_data)[:200]}")
+        if not api_data or not isinstance(api_data, list):
+            print(f"[AF DEBUG] {acc} — no list returned, bailing")
             return None
-        logger.warning("AlphaFold DB fetch failed for %s: %s", acc, exc)
-        return None
+        pdb_url = api_data[0].get("pdbUrl")
+        print(f"[AF DEBUG] {acc} pdb_url={pdb_url}")
+        if not pdb_url:
+            return None
+        pdb_text = _get_text(pdb_url)
+        print(f"[AF DEBUG] {acc} pdb_text length={len(pdb_text) if pdb_text else 0}")
     except Exception as exc:
-        logger.warning("AlphaFold DB fetch failed for %s: %s", acc, exc)
+        print(f"[AF DEBUG] {acc} EXCEPTION: {type(exc).__name__}: {exc}")
         return None
-
     if not pdb_text or not pdb_text.strip():
         return None
-
     mean_p, _, _ = _plddt_from_pdb_text(pdb_text)
-    return {
-        "pdb": pdb_text,
-        "source": "AlphaFold DB (EBI)",
-        "mean_plddt": mean_p,
-    }
+    return {"pdb": pdb_text, "source": "AlphaFold DB (EBI)", "mean_plddt": mean_p}
 
 
 

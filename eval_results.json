@@ -1,0 +1,274 @@
+[
+  {
+    "accession": "P04637",
+    "name": "TP53",
+    "group": "G1",
+    "expected_best_model": "experimental",
+    "job_id": "78",
+    "status": "completed",
+    "metrics": {
+      "best_model": "experimental",
+      "best_model_source": "Experimental PDB",
+      "confidence": 1.01,
+      "scenario": "experimental_preferred",
+      "models_used": [
+        "esmfold",
+        "alphafold_db",
+        "experimental"
+      ],
+      "esmfold_plddt": 80.27226463104326,
+      "pdb_resolution": 1.01,
+      "af_plddt": 75.05,
+      "exp_pdb_id": "9C5S",
+      "high_conf_pockets": 46,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "esmfold_vs_alphafold_db: 21.01\u00c5; esmfold_vs_experimental: 5.61\u00c5; alphafold_db_vs_experimental: 6.92\u00c5",
+      "summary": "Using high-resolution experimental structure (PDB 9C5S, resolution: 1.01\u00c5)."
+    },
+    "error": null
+  },
+  {
+    "accession": "P00533",
+    "name": "EGFR",
+    "group": "G1",
+    "expected_best_model": "experimental",
+    "job_id": "79",
+    "status": "completed",
+    "metrics": {
+      "best_model": "experimental",
+      "best_model_source": "Experimental PDB",
+      "confidence": 1.07,
+      "scenario": "experimental_preferred",
+      "models_used": [
+        "alphafold_db",
+        "experimental"
+      ],
+      "esmfold_plddt": null,
+      "pdb_resolution": 1.07,
+      "af_plddt": 75.95,
+      "exp_pdb_id": "8A27",
+      "high_conf_pockets": 75,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "alphafold_db_vs_experimental: 1.4\u00c5",
+      "summary": "Using high-resolution experimental structure (PDB 8A27, resolution: 1.07\u00c5)."
+    },
+    "error": null
+  },
+  {
+    "accession": "P37840",
+    "name": "Alpha-synuclein",
+    "group": "G2",
+    "expected_best_model": "alphafold_db",
+    "job_id": "80",
+    "status": "completed",
+    "metrics": {
+      "best_model": "experimental",
+      "best_model_source": "Experimental PDB",
+      "confidence": 1.23,
+      "scenario": "experimental_preferred",
+      "models_used": [
+        "esmfold",
+        "experimental"
+      ],
+      "esmfold_plddt": 33.43571428571428,
+      "pdb_resolution": 1.23,
+      "af_plddt": null,
+      "exp_pdb_id": "8JJV",
+      "high_conf_pockets": 0,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "esmfold_vs_experimental: 16.59\u00c5",
+      "summary": "Using high-resolution experimental structure (PDB 8JJV, resolution: 1.23\u00c5)."
+    },
+    "error": null
+  },
+  {
+    "accession": "Q99720",
+    "name": "SIGMAR1",
+    "group": "G2",
+    "expected_best_model": "alphafold_db",
+    "job_id": "81",
+    "status": "completed",
+    "metrics": {
+      "best_model": "alphafold_db",
+      "best_model_source": "AlphaFold DB (EBI)",
+      "confidence": 93.69,
+      "scenario": "alphafold_db",
+      "models_used": [
+        "esmfold",
+        "alphafold_db",
+        "experimental"
+      ],
+      "esmfold_plddt": 91.97757847533633,
+      "pdb_resolution": 2.5051,
+      "af_plddt": 93.69,
+      "exp_pdb_id": "\u2014",
+      "high_conf_pockets": 76,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "esmfold_vs_alphafold_db: 2.7\u00c5; esmfold_vs_experimental: 3.29\u00c5; alphafold_db_vs_experimental: 4.45\u00c5",
+      "summary": "Using AlphaFold DB model (mean pLDDT: 93.7) \u2014 experimental resolution insufficient or unavailable."
+    },
+    "error": null
+  },
+  {
+    "accession": "A0PK11",
+    "name": "Clarin-2",
+    "group": "G3",
+    "expected_best_model": "esmfold",
+    "job_id": "82",
+    "status": "completed",
+    "metrics": {
+      "best_model": "alphafold_db",
+      "best_model_source": "AlphaFold DB (EBI)",
+      "confidence": 91.3,
+      "scenario": "alphafold_db",
+      "models_used": [
+        "esmfold",
+        "alphafold_db"
+      ],
+      "esmfold_plddt": 86.54741379310344,
+      "pdb_resolution": null,
+      "af_plddt": 91.3,
+      "exp_pdb_id": "\u2014",
+      "high_conf_pockets": 34,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "esmfold_vs_alphafold_db: 3.19\u00c5",
+      "summary": "Using AlphaFold DB model (mean pLDDT: 91.3) \u2014 experimental resolution insufficient or unavailable."
+    },
+    "error": null
+  },
+  {
+    "accession": "A2RU14",
+    "name": "TMEM218",
+    "group": "G3",
+    "expected_best_model": "esmfold",
+    "job_id": "83",
+    "status": "completed",
+    "metrics": {
+      "best_model": "alphafold_db",
+      "best_model_source": "AlphaFold DB (EBI)",
+      "confidence": 87.65,
+      "scenario": "alphafold_db",
+      "models_used": [
+        "esmfold",
+        "alphafold_db"
+      ],
+      "esmfold_plddt": 63.44347826086957,
+      "pdb_resolution": null,
+      "af_plddt": 87.65,
+      "exp_pdb_id": "\u2014",
+      "high_conf_pockets": 5,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "esmfold_vs_alphafold_db: 14.35\u00c5",
+      "summary": "Using AlphaFold DB model (mean pLDDT: 87.7) \u2014 experimental resolution insufficient or unavailable."
+    },
+    "error": null
+  },
+  {
+    "accession": "Q9Y243",
+    "name": "AKT3",
+    "group": "G3",
+    "expected_best_model": "esmfold",
+    "job_id": "84",
+    "status": "completed",
+    "metrics": {
+      "best_model": "experimental",
+      "best_model_source": "Experimental PDB",
+      "confidence": 1.33,
+      "scenario": "experimental_preferred",
+      "models_used": [
+        "alphafold_db",
+        "experimental"
+      ],
+      "esmfold_plddt": null,
+      "pdb_resolution": 1.33,
+      "af_plddt": 82.07,
+      "exp_pdb_id": "8ZXW",
+      "high_conf_pockets": 63,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "alphafold_db_vs_experimental: 20.84\u00c5",
+      "summary": "Using high-resolution experimental structure (PDB 8ZXW, resolution: 1.33\u00c5)."
+    },
+    "error": null
+  },
+  {
+    "accession": "P04049",
+    "name": "RAF1",
+    "group": "G4",
+    "expected_best_model": "esmfold/modal",
+    "job_id": "85",
+    "status": "completed",
+    "metrics": {
+      "best_model": "experimental",
+      "best_model_source": "Experimental PDB",
+      "confidence": 1.05,
+      "scenario": "experimental_preferred",
+      "models_used": [
+        "alphafold_db",
+        "experimental"
+      ],
+      "esmfold_plddt": null,
+      "pdb_resolution": 1.05,
+      "af_plddt": 67.51,
+      "exp_pdb_id": "3IQU",
+      "high_conf_pockets": 40,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "alphafold_db_vs_experimental: 28.37\u00c5",
+      "summary": "Using high-resolution experimental structure (PDB 3IQU, resolution: 1.05\u00c5)."
+    },
+    "error": null
+  },
+  {
+    "accession": "P06280",
+    "name": "\u03b1-Galactosidase A",
+    "group": "G4",
+    "expected_best_model": "experimental",
+    "job_id": "86",
+    "status": "completed",
+    "metrics": {
+      "best_model": "experimental",
+      "best_model_source": "Experimental PDB",
+      "confidence": 1.9,
+      "scenario": "experimental_preferred",
+      "models_used": [
+        "alphafold_db",
+        "experimental"
+      ],
+      "esmfold_plddt": null,
+      "pdb_resolution": 1.9,
+      "af_plddt": 94.31,
+      "exp_pdb_id": "3HG3",
+      "high_conf_pockets": 88,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "alphafold_db_vs_experimental: 0.44\u00c5",
+      "summary": "Using high-resolution experimental structure (PDB 3HG3, resolution: 1.9\u00c5)."
+    },
+    "error": null
+  },
+  {
+    "accession": "A6NI61",
+    "name": "Myomaker",
+    "group": "G4",
+    "expected_best_model": "esmfold",
+    "job_id": "87",
+    "status": "completed",
+    "metrics": {
+      "best_model": "alphafold_db",
+      "best_model_source": "AlphaFold DB (EBI)",
+      "confidence": 90.47,
+      "scenario": "alphafold_db",
+      "models_used": [
+        "esmfold",
+        "alphafold_db"
+      ],
+      "esmfold_plddt": 84.55656108597285,
+      "pdb_resolution": null,
+      "af_plddt": 90.47,
+      "exp_pdb_id": "\u2014",
+      "high_conf_pockets": 33,
+      "total_pockets": "\u2014",
+      "pairwise_rmsd": "esmfold_vs_alphafold_db: 3.55\u00c5",
+      "summary": "Using AlphaFold DB model (mean pLDDT: 90.5) \u2014 experimental resolution insufficient or unavailable."
+    },
+    "error": null
+  }
+]

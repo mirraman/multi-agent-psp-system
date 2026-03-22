@@ -144,8 +144,8 @@ class DataAgent(BaseAgent):
 			af = fetch_alphafold_db_pdb(accession)
 			if af:
 				alphafold_db = af
-		except Exception:
-			pass
+		except Exception as exc:
+			print(f"[{accession}] DataAgent caught exception fetching AlphaFold DB: {exc}")
 
 		pubmed_data = None
 		if include_pubmed:
