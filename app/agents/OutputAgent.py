@@ -3,8 +3,7 @@ import json
 from datetime import datetime, UTC
 from typing import Any, Dict, List, Tuple
 
-from app.agents.BaseAgent import BaseAgent
-from spade.behaviour import CyclicBehaviour
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -30,8 +29,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   --mono: 'Space Mono', monospace;
   --sans: 'DM Sans', sans-serif;
 }
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
   background: var(--bg);
@@ -555,7 +552,10 @@ class OutputAgent(BaseAgent):
 		self.output_dir = "./data/outputs"
 
 	async def setup(self):
-		behaviour = MessageHandlerBehaviour(self)
+		behaviour = ActionMessageHandlerBehaviour(
+			self,
+			action_to_handler={"generate_output": "handle_generate_output"},
+		)
 		self.add_behaviour(behaviour)
 		os.makedirs(self.output_dir, exist_ok=True)
 		print(f"OutputAgent {self.jid} started")
@@ -714,12 +714,11 @@ class OutputAgent(BaseAgent):
 				"model_name": str(p.get("model_name", "experimental")).replace("_", " ").upper()
 			})
 		pocket_viz_json = json.dumps(pockets_out)
-		
+
 		# Prevent script injection
 		pocket_viz_json = pocket_viz_json.replace("</", "<\\/")
-		
 		generated_date = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
-		pdb_count = metrics.get('pdb_count', 0)
+		pdb_count = metrics.get("pdb_count", 0)
 
 		# Use the global HTML template
 		html = HTML_TEMPLATE
@@ -746,16 +745,4 @@ class OutputAgent(BaseAgent):
 		with open(html_path, "w") as f:
 			f.write(html)
 
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
-
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "generate_output":
-				await self.agent.handle_generate_output(agent_msg)
 

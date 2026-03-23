@@ -1,8 +1,8 @@
 import os
 import uuid
 from datetime import datetime, timezone
-from app.agents.BaseAgent import BaseAgent, AgentMessage
-from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent, AgentMessage
+from spade.behaviour import PeriodicBehaviour
 from app.utils.db import (
     DatabaseConnection,
     upsert_protein_result,
@@ -67,7 +67,11 @@ class CoordinatorAgent(BaseAgent):
         return job_id
 
     async def setup(self):
-        behaviour = MessageHandlerBehaviour(self)
+        behaviour = ActionMessageHandlerBehaviour(
+            self,
+            action_to_handler={},
+            default_handler="handle_response",
+        )
         self.add_behaviour(behaviour)
 
         check_db_behaviour = CheckDatabaseForJobsBehaviour(period=5)
@@ -429,18 +433,6 @@ class CoordinatorAgent(BaseAgent):
                     await fail_task(db_job_id, error_message=error_msg)
                 except Exception as e:
                     print(f"Failed to mark task failed: {e}")
-
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-    def __init__(self, coordinator):
-        super().__init__()
-        self.coordinator = coordinator
-
-    async def run(self):
-        msg = await self.receive(timeout=10)
-        if msg:
-            agent_msg = self.coordinator.parse_message(msg)
-            await self.coordinator.handle_response(agent_msg)
 
 
 class CheckDatabaseForJobsBehaviour(PeriodicBehaviour):

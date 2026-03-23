@@ -1,4 +1,4 @@
-from app.agents.BaseAgent import BaseAgent
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
 from app.utils.fetchers import (
 	fetch_uniprot,
 	fetch_pdb,
@@ -7,7 +7,6 @@ from app.utils.fetchers import (
 	fetch_pdb_text,
 )
 from app.utils.open_targets import fetch_disease_targets
-from spade.behaviour import CyclicBehaviour
 from typing import Any, Dict, List
 
 
@@ -17,7 +16,10 @@ class DataAgent(BaseAgent):
 		self.coordinator_jid = self.format_jid("coordinator")
 
 	async def setup(self):
-		behaviour = MessageHandlerBehaviour(self)
+		behaviour = ActionMessageHandlerBehaviour(
+			self,
+			action_to_handler={"fetch_data": "handle_fetch_data"},
+		)
 		self.add_behaviour(behaviour)
 		print(f"DataAgent {self.jid} started")
 
@@ -165,16 +167,3 @@ class DataAgent(BaseAgent):
 			"experimental_best_pdb": experimental_best,
 			"alphafold_db": alphafold_db,
 		}
-
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
-
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "fetch_data":
-				await self.agent.handle_fetch_data(agent_msg)

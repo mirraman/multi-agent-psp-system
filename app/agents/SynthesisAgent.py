@@ -1,8 +1,7 @@
 import os
 from typing import Any, Dict
 
-from app.agents.BaseAgent import BaseAgent
-from spade.behaviour import CyclicBehaviour
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
 
 
 def _float_env(name: str, default: float) -> float:
@@ -18,7 +17,10 @@ class SynthesisAgent(BaseAgent):
 		self.coordinator_jid = self.format_jid("coordinator")
 
 	async def setup(self):
-		behaviour = MessageHandlerBehaviour(self)
+		behaviour = ActionMessageHandlerBehaviour(
+			self,
+			action_to_handler={"synthesize": "handle_synthesize"},
+		)
 		self.add_behaviour(behaviour)
 		print(f"SynthesisAgent {self.jid} started")
 
@@ -161,16 +163,3 @@ class SynthesisAgent(BaseAgent):
 		synthesis["best_model"] = "none"
 		synthesis["summary"] = "Total failure: No structure available."
 		return synthesis
-
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
-
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "synthesize":
-				await self.agent.handle_synthesize(agent_msg)

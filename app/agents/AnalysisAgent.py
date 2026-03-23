@@ -1,6 +1,5 @@
 from typing import Any, Dict
-from app.agents.BaseAgent import BaseAgent
-from spade.behaviour import CyclicBehaviour
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
 from app.utils.structure_alignment import align_structures
 
 
@@ -10,7 +9,10 @@ class AnalysisAgent(BaseAgent):
 		self.coordinator_jid = self.format_jid("coordinator")
 
 	async def setup(self):
-		behaviour = MessageHandlerBehaviour(self)
+		behaviour = ActionMessageHandlerBehaviour(
+			self,
+			action_to_handler={"analyze": "handle_analyze"},
+		)
 		self.add_behaviour(behaviour)
 		print(f"AnalysisAgent {self.jid} started")
 
@@ -123,15 +125,3 @@ class AnalysisAgent(BaseAgent):
 			)
 
 		return analysis
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
-
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "analyze":
-				await self.agent.handle_analyze(agent_msg)

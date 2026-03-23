@@ -33,9 +33,7 @@ Payload sent:
 import logging
 from typing import Any, Dict, List, Optional, Set
 
-from spade.behaviour import CyclicBehaviour
-
-from app.agents.BaseAgent import BaseAgent
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
 from app.utils.fpocket_runner import run_fpocket
 from app.utils.structure_alignment import align_structures, map_pocket_residues
 
@@ -52,7 +50,12 @@ class PocketAgent(BaseAgent):
         self.coordinator_jid = self.format_jid("coordinator")
 
     async def setup(self):
-        self.add_behaviour(MessageHandlerBehaviour(self))
+        self.add_behaviour(
+            ActionMessageHandlerBehaviour(
+                self,
+                action_to_handler={"detect_pockets": "handle_detect_pockets"},
+            )
+        )
         print(f"PocketAgent {self.jid} started")
 
     async def handle_detect_pockets(self, agent_msg):
@@ -360,16 +363,3 @@ def _empty_pocket_result(reason: str) -> Dict[str, Any]:
             "skipped_reason": reason,
         },
     }
-
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-    def __init__(self, agent):
-        super().__init__()
-        self.agent = agent
-
-    async def run(self):
-        msg = await self.receive(timeout=10)
-        if msg:
-            agent_msg = self.agent.parse_message(msg)
-            if agent_msg.action == "detect_pockets":
-                await self.agent.handle_detect_pockets(agent_msg)

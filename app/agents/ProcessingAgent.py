@@ -1,8 +1,7 @@
 from collections import Counter
 from typing import Any, Dict
 
-from app.agents.BaseAgent import BaseAgent
-from spade.behaviour import CyclicBehaviour
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
 
 
 class ProcessingAgent(BaseAgent):
@@ -11,7 +10,10 @@ class ProcessingAgent(BaseAgent):
 		self.coordinator_jid = self.format_jid("coordinator")
 
 	async def setup(self):
-		behaviour = MessageHandlerBehaviour(self)
+		behaviour = ActionMessageHandlerBehaviour(
+			self,
+			action_to_handler={"process": "handle_process"},
+		)
 		self.add_behaviour(behaviour)
 		print(f"ProcessingAgent {self.jid} started")
 
@@ -128,17 +130,4 @@ class ProcessingAgent(BaseAgent):
 			avg = sum(per_residue.values()) / len(per_residue)
 			return avg, per_residue
 		return None, {}
-
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
-
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "process":
-				await self.agent.handle_process(agent_msg)
 
