@@ -41,6 +41,6 @@ venv/
 /output/*.json
 /output/*.pdb
 /data/outputs
-README.md
+README2.md
 
 .env
