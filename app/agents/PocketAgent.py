@@ -37,6 +37,7 @@ from spade.behaviour import CyclicBehaviour
 
 from app.agents.BaseAgent import BaseAgent
 from app.utils.fpocket_runner import run_fpocket
+from app.utils.structure_alignment import align_structures, map_pocket_residues
 
 logger = logging.getLogger("psp.pocket_agent")
 
@@ -112,6 +113,7 @@ class PocketAgent(BaseAgent):
                     job_id,
                     best_model=best_model,
                     fallback_plddt_mean=fallback_plddt,
+                    models_payload=models_payload,
                 )
                 if model_errors:
                     result_payload["model_errors"] = model_errors
@@ -138,6 +140,7 @@ def _process_pockets(
     job_id: str,
     best_model: str = "esmfold",
     fallback_plddt_mean: Optional[float] = None,
+    models_payload: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Enrich raw fpocket output with pLDDT filtering and composite scoring.
@@ -209,13 +212,68 @@ def _process_pockets(
                 filtered_count += 1
         per_model_enriched[model_name] = model_enriched
 
-    # Cross-model pocket overlap (Jaccard over residue sets).
+    # Cross-model pocket overlap in a shared reference coordinate system.
     model_names = list(per_model_enriched.keys())
+    ref_name = best_model if best_model in model_names else model_names[0]
+    alignments: Dict[str, Dict[str, Any]] = {
+        ref_name: {
+            "residue_mapping": {},
+            "inverse_residue_mapping": {},
+            "tm_score": 1.0,
+            "rmsd": 0.0,
+            "aligned_length": 0,
+        }
+    }
+
+    for model_name in model_names:
+        if model_name == ref_name:
+            continue
+
+        ref_pdb = (models_payload or {}).get(ref_name, "")
+        model_pdb = (models_payload or {}).get(model_name, "")
+        if not ref_pdb or not model_pdb:
+            logger.debug(
+                "[%s] PocketAgent: skipping alignment %s->%s (missing PDB text)",
+                job_id,
+                ref_name,
+                model_name,
+            )
+            continue
+
+        try:
+            result = align_structures(ref_pdb, model_pdb, ref_name, model_name)
+            mapping_ref_to_model = result.get("residue_mapping", {})
+            alignments[model_name] = {
+                **result,
+                "inverse_residue_mapping": {
+                    int(v): int(k) for k, v in mapping_ref_to_model.items()
+                },
+            }
+        except Exception as exc:
+            # Keep the pipeline running if alignment tooling is unavailable.
+            logger.warning(
+                "[%s] PocketAgent: alignment failed for %s: %s",
+                job_id,
+                model_name,
+                exc,
+            )
+
     for model_name in model_names:
         for pocket in per_model_enriched[model_name]:
             residues_a: Set[int] = set(pocket.get("residues", []))
+            mapping_to_ref_a = alignments.get(model_name, {}).get(
+                "inverse_residue_mapping", {}
+            )
+            if model_name == ref_name:
+                residues_a_ref = residues_a
+            else:
+                residues_a_ref = map_pocket_residues(
+                    list(residues_a), mapping_to_ref_a
+                ) or residues_a
+
             seen_in_models = {model_name}
             best_jaccard = 0.0
+            best_tm_score = alignments.get(model_name, {}).get("tm_score", 0.0)
 
             for other_model in model_names:
                 if other_model == model_name:
@@ -223,13 +281,27 @@ def _process_pockets(
                 overlaps_in_model = []
                 for other_pocket in per_model_enriched[other_model]:
                     residues_b: Set[int] = set(other_pocket.get("residues", []))
-                    sim = jaccard_similarity(residues_a, residues_b)
+                    mapping_to_ref_b = alignments.get(other_model, {}).get(
+                        "inverse_residue_mapping", {}
+                    )
+                    if other_model == ref_name:
+                        residues_b_ref = residues_b
+                    else:
+                        residues_b_ref = map_pocket_residues(
+                            list(residues_b), mapping_to_ref_b
+                        ) or residues_b
+
+                    sim = jaccard_similarity(residues_a_ref, residues_b_ref)
                     overlaps_in_model.append(sim)
                 if overlaps_in_model:
                     max_sim = max(overlaps_in_model)
                     best_jaccard = max(best_jaccard, max_sim)
                     if max_sim >= CONSENSUS_JACCARD_THRESHOLD:
                         seen_in_models.add(other_model)
+                        best_tm_score = max(
+                            best_tm_score,
+                            float(alignments.get(other_model, {}).get("tm_score", 0.0)),
+                        )
 
             is_consensus = len(seen_in_models) > 1
             if is_consensus:
@@ -237,6 +309,7 @@ def _process_pockets(
             pocket["ensemble_agreement"] = {
                 "seen_in_models": sorted(seen_in_models),
                 "jaccard_similarity": round(best_jaccard, 4),
+                "tm_score_ref": round(float(best_tm_score), 3),
                 "consensus": is_consensus,
             }
 
@@ -246,7 +319,7 @@ def _process_pockets(
                 local_plddt = float(fallback_plddt_mean)
                 pocket["local_plddt_mean"] = round(local_plddt, 2)
             jaccard_bonus = best_jaccard
-            composite = druggability * (local_plddt / 100.0) * (1 + 0.3 * jaccard_bonus)
+            composite = druggability * (local_plddt / 100.0) * (1 + 0.5 * jaccard_bonus)
             pocket["composite_score"] = round(composite, 4)
 
     for pockets in per_model_enriched.values():
