@@ -1,12 +1,6 @@
 import os
-import json
-from datetime import datetime, UTC
-from typing import Any, Dict, List, Tuple
 
-from app.agents.BaseAgent import BaseAgent
-from spade.behaviour import CyclicBehaviour
-
-HTML_TEMPLATE = """<!DOCTYPE html>
+NEW_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -516,118 +510,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </body>
 </html>"""
 
-
-def _resolve_structure_pdb_for_viewer(
-	best_model: str,
-	psp_results: Dict[str, Any],
-	raw_data: Dict[str, Any],
-) -> Tuple[str, str]:
-	"""Return PDB text and display label for the synthesis best_model."""
-	if best_model == "colabfold_modal":
-		txt = (psp_results.get("colabfold_modal") or {}).get("pdb", "") or ""
-		return txt, "ColabFold/Modal (cloud)"
-	if best_model == "alphafold_db":
-		txt = (psp_results.get("alphafold_db") or {}).get("pdb", "") or ""
-		return txt, "AlphaFold DB (EBI)"
-	if best_model == "experimental":
-		exp = psp_results.get("experimental") or {}
-		txt = exp.get("pdb", "") or ""
-		if not txt:
-			exp_alt = raw_data.get("experimental_best_pdb") or {}
-			txt = exp_alt.get("pdb_text", "") or ""
-		pid = exp.get("pdb_id") or (raw_data.get("experimental_best_pdb") or {}).get("pdb_id")
-		label = f"Experimental PDB ({pid})" if pid else "Experimental PDB"
-		return txt, label
-	if best_model == "esmfold" or not best_model or best_model == "none":
-		txt = (psp_results.get("esmfold") or {}).get("pdb", "") or ""
-		if not txt and best_model != "none":
-			txt = (psp_results.get("colabfold_modal") or {}).get("pdb", "") or ""
-		if not txt:
-			txt = (psp_results.get("alphafold_db") or {}).get("pdb", "") or ""
-		return txt, "ESMFold prediction"
-	return "", "Unknown Source"
-
-
-class OutputAgent(BaseAgent):
-	def __init__(self, jid: str, password: str):
-		super().__init__(jid, password)
-		self.coordinator_jid = self.format_jid("coordinator")
-		self.output_dir = "./data/outputs"
-
-	async def setup(self):
-		behaviour = MessageHandlerBehaviour(self)
-		self.add_behaviour(behaviour)
-		os.makedirs(self.output_dir, exist_ok=True)
-		print(f"OutputAgent {self.jid} started")
-
-	async def handle_generate_output(self, agent_msg):
-		job_id = agent_msg.job_id
-		accession = agent_msg.payload.get("accession", job_id)
-		raw_data = agent_msg.payload.get("raw_data", {})
-		psp_results = agent_msg.payload.get("psp_results", {})
-		processing_results = agent_msg.payload.get("processing_results", {})
-		synthesis_results = agent_msg.payload.get("synthesis_results", {})
-		analysis_results = agent_msg.payload.get("analysis_results", {})
-		pocket_results = agent_msg.payload.get("pocket_results") or {}
-
-		output_path = self._generate_output(
-			accession, raw_data, psp_results, processing_results,
-			synthesis_results, analysis_results, pocket_results
-		)
-
-		msg = self.create_message(
-			to=self.coordinator_jid,
-			msg_type="response",
-			action="output_generated",
-			payload={"output_path": output_path},
-			job_id=job_id,
-		)
-		await self.send(msg)
-
-	def _generate_output(
-		self,
-		accession: str,
-		raw_data: Dict[str, Any],
-		psp_results: Dict[str, Any],
-		processing_results: Dict[str, Any],
-		synthesis_results: Dict[str, Any],
-		analysis_results: Dict[str, Any],
-		pocket_results: Dict[str, Any] = None,
-	) -> str:
-		timestamp = datetime.now(UTC).isoformat()
-
-		output_doc = {
-			"accession": accession,
-			"timestamp": timestamp,
-			"uniprot": raw_data.get("uniprot"),
-			"pdb": raw_data.get("pdb"),
-			"raw_data": raw_data,
-			"esmfold": psp_results,
-			"metrics": processing_results,
-			"synthesis": synthesis_results,
-			"analysis": analysis_results,
-			"pockets": pocket_results or {},
-		}
-
-		json_path = os.path.join(self.output_dir, f"{accession}.json")
-		with open(json_path, "w") as f:
-			json.dump(output_doc, f, indent=2)
-
-		synth = synthesis_results or {}
-		bm = synth.get("best_model", "esmfold")
-		pdb_text, _src = _resolve_structure_pdb_for_viewer(bm, psp_results, raw_data)
-		if pdb_text:
-			suffix = bm if bm else "model"
-			pdb_path = os.path.join(self.output_dir, f"{accession}_{suffix}.pdb")
-			with open(pdb_path, "w") as f:
-				f.write(pdb_text)
-
-		html_path = os.path.join(self.output_dir, f"{accession}.html")
-		self._generate_html_report(html_path, output_doc)
-
-		return json_path
-
-	def _generate_html_report(self, html_path: str, output_doc: Dict[str, Any]) -> None:
+NEW_METHOD_BODY = '''	def _generate_html_report(self, html_path: str, output_doc: Dict[str, Any]) -> None:
 		accession = output_doc.get("accession", "Unknown")
 		uniprot = output_doc.get("uniprot") or {}
 		metrics = output_doc.get("metrics") or {}
@@ -644,7 +527,7 @@ class OutputAgent(BaseAgent):
 		pdb_text, source_display = _resolve_structure_pdb_for_viewer(
 			best_model, psp_results, output_doc.get("raw_data") or {}
 		)
-		pdb_escaped = pdb_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+		pdb_escaped = pdb_text.replace("\\\\", "\\\\\\\\").replace("`", "\\\\`").replace("$", "\\\\$")
 
 		esmfold_plddt = metrics.get("esmfold_plddt_mean")
 		esmfold_plddt_str = f"{esmfold_plddt:.2f}" if isinstance(esmfold_plddt, (int, float)) else "N/A"
@@ -681,13 +564,13 @@ class OutputAgent(BaseAgent):
           <div class="rmsd-bar"><div class="rmsd-fill" style="width:{w}%;background:{color};"></div></div>
         </div>
         <div class="rmsd-val" style="color:{color};">{val}A</div>
-      </div>\n"""
+      </div>\\n"""
 
 		models_pills = ""
 		for m in models_compared:
 			m_disp = m.replace("_", " ")
 			cls = "active-model" if m == best_model else "compared"
-			models_pills += f'        <div class="model-pill {cls}">{m_disp}</div>\n'
+			models_pills += f'        <div class="model-pill {cls}">{m_disp}</div>\\n'
 
 		def _rank_key(p: Dict[str, Any]) -> int:
 			r = p.get("rank", p.get("pocket_id", 999))
@@ -716,7 +599,7 @@ class OutputAgent(BaseAgent):
 		pocket_viz_json = json.dumps(pockets_out)
 		
 		# Prevent script injection
-		pocket_viz_json = pocket_viz_json.replace("</", "<\\/")
+		pocket_viz_json = pocket_viz_json.replace("</", "<\\\\/")
 		
 		generated_date = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 		pdb_count = metrics.get('pdb_count', 0)
@@ -745,17 +628,43 @@ class OutputAgent(BaseAgent):
 
 		with open(html_path, "w") as f:
 			f.write(html)
+'''
 
+target_file = r"c:\programing\multi-agent-psp-system\backend\app\agents\OutputAgent.py"
 
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
+with open(target_file, "r", encoding="utf-8") as f:
+    lines = f.readlines()
 
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "generate_output":
-				await self.agent.handle_generate_output(agent_msg)
+start_idx = -1
+end_idx = -1
+for i, line in enumerate(lines):
+    if line.startswith("	def _generate_html_report"):
+        start_idx = i
+    if line.startswith("class MessageHandlerBehaviour"):
+        end_idx = i - 1
+        break
 
+if start_idx != -1 and end_idx != -1:
+    # We must insert the HTML_TEMPLATE variable outside the class or at the top of the file
+    # We will put it after the imports
+    import_end_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip() == "" and i > 5:
+            import_end_idx = i
+            break
+            
+    header = lines[:import_end_idx+1]
+    template_def = ["HTML_TEMPLATE = \"\"\"" + NEW_HTML_TEMPLATE + "\"\"\"\n\n"]
+    middle = lines[import_end_idx+1:start_idx]
+    tail = lines[end_idx+1:]
+    
+    with open(target_file, "w", encoding="utf-8") as f:
+        f.writelines(header)
+        f.writelines(template_def)
+        f.writelines(middle)
+        f.write(NEW_METHOD_BODY + "\n\n")
+        f.writelines(tail)
+    
+    print("Successfully patched OutputAgent.py")
+else:
+    print("Could not find boundaries")
