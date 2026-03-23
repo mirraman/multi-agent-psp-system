@@ -1,4 +1,3 @@
-from typing import Dict
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from app.agents.BaseAgent import BaseAgent
 import modal

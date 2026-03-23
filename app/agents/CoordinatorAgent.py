@@ -5,7 +5,6 @@ from app.agents.BaseAgent import BaseAgent, AgentMessage
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from app.utils.db import (
     DatabaseConnection,
-    update_task,
     upsert_protein_result,
     claim_pending_job,
     complete_task,

@@ -20,8 +20,6 @@ from app.utils.db import (
     get_dataset,
     get_dataset_jobs,
     get_metrics,
-    # kept for backward compatibility
-    upsert_protein_result,
 )
 from app.utils.fasta_parser import parse_fasta, is_valid_protein_sequence
 from app.utils.validation_set import VALIDATION_TARGETS

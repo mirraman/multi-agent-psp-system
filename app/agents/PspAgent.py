@@ -1,4 +1,3 @@
-from typing import Any, Dict
 from app.agents.BaseAgent import BaseAgent
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from celery.result import AsyncResult
