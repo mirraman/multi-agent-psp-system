@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
   redis:
     image: redis:7
     container_name: psp-redis
@@ -8,3 +9,131 @@ services:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - psp-network
+
+  postgres:
+    image: postgres:16
+    container_name: psp-postgres
+    ports:
+      - "55432:5432"
+    environment:
+      POSTGRES_USER: psp
+      POSTGRES_PASSWORD: psp
+      POSTGRES_DB: psp_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U psp -d psp_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - psp-network
+
+  xmpp:
+    image: prosody/prosody:latest
+    container_name: psp-xmpp
+    ports:
+      - "5222:5222"
+    volumes:
+      - ./xmpp/prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
+      - prosody-data:/var/lib/prosody
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+  # ── Application Services ────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: psp-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app          # live reload for development
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+  agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: psp-agents
+    command: python -m app.AgentRunner
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
+      - REDIS_URL=redis://redis:6379/0
+      - ENABLE_MODAL=1
+      - XMPP_DOMAIN=xmpp
+      - XMPP_PASSWORD=secret123
+      - XMPP_AUTO_REGISTER=1
+      - XMPP_USE_TLS=0
+      - XMPP_FORCE_STARTTLS=0
+      - XMPP_USE_SSL=0
+      - XMPP_ALLOW_UNENCRYPTED_PLAIN_AUTH=1
+      # Pass host Modal credentials into container when available.
+      # Set these in your shell (or a .env file) before docker compose up.
+      - MODAL_TOKEN_ID=${MODAL_TOKEN_ID}
+      - MODAL_TOKEN_SECRET=${MODAL_TOKEN_SECRET}
+    volumes:
+      - ./app:/app/app          # live reload for development
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      xmpp:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: celery
+    container_name: psp-celery
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+volumes:
+  postgres-data:
+  prosody-data:
+
+networks:
+  psp-network:
+    driver: bridge

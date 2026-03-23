@@ -1,0 +1,40 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.cursor/
+.vscode/
+*.code-workspace
+
+# Logs and temp files
+*.log
+*.tmp
+/tmp/
+
+# Output data (mounted as volume in compose)
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs / artifacts
+*.md
+
+# fpocket vendored tree — build only needs sources (see Dockerfile COPY list)
+tmp_fpocket/tests/
+tmp_fpocket/data/
+tmp_fpocket/doc/
+tmp_fpocket/.git/

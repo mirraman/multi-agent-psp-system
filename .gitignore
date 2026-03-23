@@ -20,13 +20,6 @@ wheels/
 .installed.cfg
 *.egg
 
-# Environment
-.env
-.venv
-env/
-venv/
-ENV/
-
 # IDE
 .idea/
 .vscode/
@@ -42,9 +35,12 @@ plan.md
 docker-compose.yml
 prosody/prosody.cfg.lua
 venv/
+.venv/
 .python-version
 /output/*.html
 /output/*.json
 /output/*.pdb
 /data/outputs
 README.md
+
+.env

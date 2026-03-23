@@ -10,36 +10,40 @@ from app.agents.SynthesisAgent import SynthesisAgent
 from app.agents.AnalysisAgent import AnalysisAgent
 from app.agents.OutputAgent import OutputAgent
 from app.agents.ModalAgent import ModalAgent
-from app.utils.db import MongoConnection
+from app.agents.PocketAgent import PocketAgent
+from app.utils.db import DatabaseConnection
 
-PASSWORD = "secret123"
+AGENT_DOMAIN = os.getenv("XMPP_DOMAIN", "xmpp")
+PASSWORD = os.getenv("XMPP_PASSWORD", "secret123")
+AUTO_REGISTER = os.getenv("XMPP_AUTO_REGISTER", "1") == "1"
 
 AGENTS = [
-    ("coordinator@localhost", CoordinatorAgent),
-    ("data_agent@localhost", DataAgent),
-    ("psp_agent@localhost", PspAgent),
-    ("processing_agent@localhost", ProcessingAgent),
-    ("analysis_agent@localhost", AnalysisAgent),
-    ("synthesis_agent@localhost", SynthesisAgent),
-    ("output_agent@localhost", OutputAgent),
-    ("modal_agent@localhost", ModalAgent),
+    (f"coordinator@{AGENT_DOMAIN}", CoordinatorAgent),
+    (f"data_agent@{AGENT_DOMAIN}", DataAgent),
+    (f"psp_agent@{AGENT_DOMAIN}", PspAgent),
+    (f"processing_agent@{AGENT_DOMAIN}", ProcessingAgent),
+    (f"analysis_agent@{AGENT_DOMAIN}", AnalysisAgent),
+    (f"synthesis_agent@{AGENT_DOMAIN}", SynthesisAgent),
+    (f"pocket_agent@{AGENT_DOMAIN}", PocketAgent),
+    (f"output_agent@{AGENT_DOMAIN}", OutputAgent),
+    (f"modal_agent@{AGENT_DOMAIN}", ModalAgent),
 ]
 
 
 async def main():
-    mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://psp:psp@localhost:5432/psp_db")
     try:
-        await MongoConnection.init(mongo_uri)
-        print(f"Connected to MongoDB: {mongo_uri}")
+        await DatabaseConnection.init(database_url)
+        print(f"Connected to PostgreSQL: {database_url}")
     except Exception as e:
-        print(f"MongoDB connection failed: {e}")
+        print(f"PostgreSQL connection failed: {e}")
         print("Coordinator will not be able to poll for jobs from DB!")
 
     agents = []
     
     for jid, AgentClass in AGENTS:
         agent = AgentClass(jid, PASSWORD)
-        await agent.start(auto_register=True)
+        await agent.start(auto_register=AUTO_REGISTER)
         agents.append(agent)
         print(f"Started: {jid}")
     
@@ -56,10 +60,10 @@ async def main():
     for agent in agents:
         await agent.stop()
     
-    await MongoConnection.close()
+    await DatabaseConnection.close()
     print("Done!")
 
 
 if __name__ == "__main__":
-    spade.run(main(), embedded_xmpp_server=True)
+    spade.run(main())
 
