@@ -708,10 +708,11 @@ class OutputAgent(BaseAgent):
 				"composite": p.get("composite_score", 0),
 				"volume": p.get("volume", 0),
 				"plddt": p.get("local_plddt_mean", 0),
-				"consensus": p.get("consensus", False),
-				"jaccard": p.get("jaccard", 0.0),
+				"consensus": p.get("ensemble_agreement", {}).get("consensus", False),
+				"jaccard": p.get("ensemble_agreement", {}).get("jaccard", 0.0),
 				"model": p.get("model_name", "experimental"),
-				"model_name": str(p.get("model_name", "experimental")).replace("_", " ").upper()
+				"model_name": str(p.get("model_name", "experimental")).replace("_", " ").upper(),
+				"tm_score": p.get("ensemble_agreement", {}).get("tm_score_ref", 0.0)
 			})
 		pocket_viz_json = json.dumps(pockets_out)
 
