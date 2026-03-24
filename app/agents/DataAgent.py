@@ -120,19 +120,49 @@ class DataAgent(BaseAgent):
 				continue
 
 		experimental_best: Dict[str, Any] = {}
-		best_res = None
+		best_score = -1.0
 		best_entry = None
+		uniprot_seq = uniprot_data.get("sequence", "")
+
 		for entry in pdb_results:
 			meta = (entry or {}).get("metadata") or {}
 			res = meta.get("resolution")
-			if isinstance(res, (int, float)):
-				if best_res is None or res < best_res:
-					best_res = res
-					best_entry = entry
+			title = meta.get("title", "").lower()
+			pdb_id = entry.get("pdb_id")
+
+			# Bonus for biologically relevant structures.
+			if any(x in title for x in ["core domain", "dna-binding", "tetramer", "full", "wild-type", "dna", "mdm2", "oligomer"]):
+				coverage_bonus = 100
+			else:
+				coverage_bonus = 0
+
+			# Rough sequence coverage from CA atoms.
+			if pdb_id:
+				try:
+					pdb_text = fetch_pdb_text(pdb_id)
+					parsed_res = len([
+						line
+						for line in pdb_text.splitlines()
+						if line.startswith("ATOM") and "CA" in line
+					])
+					coverage = min(100, int(parsed_res / len(uniprot_seq) * 200)) if uniprot_seq else 50
+				except Exception:
+					coverage = 30
+			else:
+				coverage = 30
+
+			# Final score (higher = better).
+			score = (1000 / (res or 10)) + coverage_bonus + coverage
+
+			if score > best_score:
+				best_score = score
+				best_entry = entry
+
 		if best_entry and best_entry.get("pdb_id"):
 			try:
 				pdb_text = fetch_pdb_text(best_entry["pdb_id"])
 				if pdb_text and pdb_text.strip():
+					best_res = ((best_entry or {}).get("metadata") or {}).get("resolution")
 					experimental_best = {
 						"pdb_id": best_entry["pdb_id"],
 						"pdb_text": pdb_text,
