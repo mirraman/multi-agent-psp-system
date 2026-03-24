@@ -663,9 +663,22 @@ class OutputAgent(BaseAgent):
 		total_pockets = pocket_summary_data.get("total_detected", 0)
 		high_conf_count = pocket_summary_data.get("high_confidence", 0)
 		
-		consensus_count = len([p for p in pocket_list if p.get("consensus")])
+    consensus_count = pocket_summary_data.get(
+      "consensus_pockets",
+      len([
+        p
+        for p in pocket_list
+        if p.get("ensemble_agreement", {}).get("consensus", False)
+      ]),
+    )
 		top_druggability = max([p.get("druggability_score", 0) for p in pocket_list]) if pocket_list else 0
-		top_jaccard = max([p.get("jaccard", 0) for p in pocket_list]) if pocket_list else 0
+    top_jaccard = (
+      max([
+        p.get("ensemble_agreement", {}).get("jaccard_similarity", 0.0)
+        for p in pocket_list
+      ])
+      if pocket_list else 0.0
+    )
 		
 		pairwise_rmsd = analysis.get("pairwise_rmsd", {})
 		avg_rmsd = sum(pairwise_rmsd.values()) / len(pairwise_rmsd) if pairwise_rmsd else 0
@@ -709,7 +722,7 @@ class OutputAgent(BaseAgent):
 				"volume": p.get("volume", 0),
 				"plddt": p.get("local_plddt_mean", 0),
 				"consensus": p.get("ensemble_agreement", {}).get("consensus", False),
-				"jaccard": p.get("ensemble_agreement", {}).get("jaccard", 0.0),
+        "jaccard": p.get("ensemble_agreement", {}).get("jaccard_similarity", 0.0),
 				"model": p.get("model_name", "experimental"),
 				"model_name": str(p.get("model_name", "experimental")).replace("_", " ").upper(),
 				"tm_score": p.get("ensemble_agreement", {}).get("tm_score_ref", 0.0)
