@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.utils.db import (
     DatabaseConnection,
+    get_database_url,
     insert_task,
     get_task_by_id,
     get_job_logs,
@@ -35,9 +36,7 @@ LATEST_VALIDATION_REPORT: Optional[Dict[str, Any]] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database_url = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://psp:psp@localhost:5432/psp_db"
-    )
+    database_url = get_database_url()
     try:
         await DatabaseConnection.init(database_url)
         logger.info("Connected to PostgreSQL")

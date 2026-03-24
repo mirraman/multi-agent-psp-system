@@ -1,9 +1,19 @@
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
+def get_database_url() -> str:
+    url = (os.getenv("DATABASE_URL") or "").strip()
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Define it in the environment or a .env file "
+            "(see .env.example; docker-compose sets it for containers)."
+        )
+    return url
 
 
 # ---------------------------------------------------------------------------

@@ -366,7 +366,7 @@ body {
     <div class="protein-sub">{PROTEIN_SUB}</div>
   </div>
   <div class="header-badges">
-    <span class="badge badge-model">{BEST_MODEL} · pLDDT {BEST_PLDDT}</span>
+    <span class="badge badge-model">{BEST_MODEL} · {BEST_QUALITY_BADGE}</span>
     <span class="badge badge-consensus">{CONSENSUS_POCKETS} consensus pockets</span>
     <span class="badge badge-pockets">{MODELS_COUNT}-model ensemble</span>
   </div>
@@ -376,7 +376,7 @@ body {
   <div class="stat">
     <div class="stat-label">Best Model</div>
     <div class="stat-value orange" style="font-size:1rem;margin-top:4px;">{BEST_MODEL}</div>
-    <div class="stat-unit">pLDDT {BEST_PLDDT}</div>
+    <div class="stat-unit">{BEST_QUALITY_BADGE}</div>
   </div>
   <div class="stat">
     <div class="stat-label">ESMFold pLDDT</div>
@@ -648,12 +648,29 @@ class OutputAgent(BaseAgent):
 
 		esmfold_plddt = metrics.get("esmfold_plddt_mean")
 		esmfold_plddt_str = f"{esmfold_plddt:.2f}" if isinstance(esmfold_plddt, (int, float)) else "N/A"
-		best_plddt_str = "N/A"
-		if synthesis.get("confidence_score") is not None:
-			try:
-				best_plddt_str = f"{float(synthesis['confidence_score']):.2f}"
-			except:
-				best_plddt_str = str(synthesis['confidence_score'])
+
+		conf = synthesis.get("confidence_score")
+		bm_key = (synthesis.get("best_model") or "").lower()
+
+		def _best_quality_badge() -> str:
+			"""Match SynthesisAgent: experimental uses Å resolution, not pLDDT."""
+			if bm_key == "experimental":
+				if isinstance(conf, (int, float)):
+					return f"Resolution {float(conf):.2f} Å"
+				return "Resolution n/a"
+			if bm_key == "colabfold_modal":
+				if isinstance(conf, str):
+					return f"Confidence: {conf}"
+				if isinstance(conf, (int, float)):
+					return f"pLDDT {float(conf):.2f}"
+				return "ColabFold/Modal"
+			if isinstance(conf, (int, float)):
+				return f"pLDDT {float(conf):.2f}"
+			if conf is not None:
+				return str(conf)
+			return "pLDDT N/A"
+
+		best_quality_badge = _best_quality_badge()
 
 		models_compared = analysis.get("models_compared", [])
 		consensus_conf = analysis.get("consensus_confidence")
@@ -740,7 +757,7 @@ class OutputAgent(BaseAgent):
 		html = html.replace("{PROTEIN_NAME}", str(protein_name))
 		html = html.replace("{PROTEIN_SUB}", str(protein_sub))
 		html = html.replace("{BEST_MODEL}", str(source_display))
-		html = html.replace("{BEST_PLDDT}", str(best_plddt_str))
+		html = html.replace("{BEST_QUALITY_BADGE}", str(best_quality_badge))
 		html = html.replace("{ESMFOLD_PLDDT}", str(esmfold_plddt_str))
 		html = html.replace("{AVG_RMSD}", f"{avg_rmsd:.2f}")
 		html = html.replace("{TOTAL_POCKETS}", str(total_pockets))

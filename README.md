@@ -118,24 +118,31 @@ Core stack includes:
 cd backend
 ```
 
-2. (Optional) Export Modal credentials if you want Modal/ColabFold path enabled:
+2. Create a local env file (Compose requires `POSTGRES_PASSWORD`; do not commit `.env`):
+
+```powershell
+copy .env.example .env
+# Edit .env: replace all placeholders (POSTGRES_*, DATABASE_URL, etc.) with your own values.
+```
+
+3. (Optional) Export Modal credentials if you want Modal/ColabFold path enabled:
 
 ```powershell
 $env:MODAL_TOKEN_ID="your_token_id"
 $env:MODAL_TOKEN_SECRET="your_token_secret"
 ```
 
-3. Start all services:
+4. Start all services:
 
 ```powershell
 docker compose up --build
 ```
 
-4. Open API docs:
+5. Open API docs:
 
 - `http://localhost:8000/docs`
 
-5. Submit a test job:
+6. Submit a test job:
 
 ```json
 POST /jobs
@@ -145,7 +152,7 @@ POST /jobs
 }
 ```
 
-6. Track result:
+7. Track result:
 
 - `GET /jobs/{job_id}`
 - `GET /jobs/{job_id}/logs`
