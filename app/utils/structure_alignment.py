@@ -48,6 +48,15 @@ def align_structures(
     }
 
 
+def invert_residue_mapping(ref_to_mobile: Dict[int, int]) -> Dict[int, int]:
+    """Invert ref→mobile mapping from :func:`align_structures` (mobile residue → ref)."""
+    inv: Dict[int, int] = {}
+    for ref_res, mob_res in ref_to_mobile.items():
+        if mob_res not in inv:
+            inv[mob_res] = ref_res
+    return inv
+
+
 def map_pocket_residues(residues: List[int], mapping: Dict[int, int]) -> Set[int]:
-    """Map a list of residue ids through an integer residue mapping."""
+    """Map residue numbers that live in **reference** numbering through ref→mobile mapping."""
     return {mapping[r] for r in residues if r in mapping}

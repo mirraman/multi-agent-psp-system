@@ -658,28 +658,28 @@ class OutputAgent(BaseAgent):
 		models_compared = analysis.get("models_compared", [])
 		consensus_conf = analysis.get("consensus_confidence")
 		has_consensus = analysis.get("has_consensus", False)
-		
-                pocket_summary_data = pocket_data.get("pocket_summary", {})
-                total_pockets = pocket_summary_data.get("total_detected", 0)
-                high_conf_count = pocket_summary_data.get("high_confidence", 0)
-		
-                consensus_count = pocket_summary_data.get(
-                    "consensus_pockets",
-                    len([
-                        p
-                        for p in pocket_list
-                        if p.get("ensemble_agreement", {}).get("consensus", False)
-                    ]),
-                )
-                top_druggability = max([p.get("druggability_score", 0) for p in pocket_list]) if pocket_list else 0
-                top_jaccard = (
-                    max([
-                        p.get("ensemble_agreement", {}).get("jaccard_similarity", 0.0)
-                        for p in pocket_list
-                    ])
-                    if pocket_list else 0.0
-                )
-		
+
+		pocket_summary_data = pocket_data.get("pocket_summary", {})
+		total_pockets = pocket_summary_data.get("total_detected", 0)
+		high_conf_count = pocket_summary_data.get("high_confidence", 0)
+
+		consensus_count = pocket_summary_data.get(
+			"consensus_pockets",
+			len([
+				p
+				for p in pocket_list
+				if p.get("ensemble_agreement", {}).get("consensus", False)
+			]),
+		)
+		top_druggability = max([p.get("druggability_score", 0) for p in pocket_list]) if pocket_list else 0
+		top_jaccard = (
+			max([
+				p.get("ensemble_agreement", {}).get("jaccard_similarity", 0.0)
+				for p in pocket_list
+			])
+			if pocket_list else 0.0
+		)
+
 		pairwise_rmsd = analysis.get("pairwise_rmsd", {})
 		avg_rmsd = sum(pairwise_rmsd.values()) / len(pairwise_rmsd) if pairwise_rmsd else 0
 

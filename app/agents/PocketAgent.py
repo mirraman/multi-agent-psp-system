@@ -20,7 +20,7 @@ from spade.behaviour import CyclicBehaviour
 
 from app.agents.BaseAgent import BaseAgent
 from app.utils.fpocket_runner import run_fpocket
-from app.utils.structure_alignment import align_structures, map_pocket_residues  # ← NEW
+from app.utils.structure_alignment import align_structures, invert_residue_mapping
 
 logger = logging.getLogger("psp.pocket_agent")
 
@@ -178,23 +178,33 @@ def _process_pockets(
                 logger.warning("[%s] Alignment failed for %s → %s: %s", job_id, ref_name, model_name, e)
                 alignments[model_name] = {"residue_mapping": {}, "tm_score": 0.0}
 
-    # === STEP 3: Cross-model consensus with REAL residue mapping ===
+    # mobile (model) residue numbers → reference numbering (align_structures maps ref → mobile)
+    mobile_to_ref: Dict[str, Dict[int, int]] = {
+        mn: invert_residue_mapping(alignments[mn]["residue_mapping"]) for mn in alignments
+    }
+
+    def _pocket_residues_in_ref(mn: str, residues: List[int]) -> Set[int]:
+        if mn == ref_name:
+            return set(residues)
+        inv = mobile_to_ref[mn]
+        return {inv[r] for r in residues if r in inv}
+
+    # === STEP 3: Cross-model consensus in reference residue space ===
     for model_name, model_pockets in per_model_enriched.items():
         for pocket in model_pockets:
-            residues_a: Set[int] = set(pocket.get("residues", []))
+            residues_a = _pocket_residues_in_ref(model_name, pocket.get("residues", []))
             seen_in_models = {model_name}
             best_jaccard = 0.0
 
             for other_model in alignments:
                 if other_model == model_name:
                     continue
-                mapping = alignments[other_model]["residue_mapping"]
 
                 for other_pocket in per_model_enriched[other_model]:
-                    residues_b_mapped = map_pocket_residues(other_pocket.get("residues", []), mapping)
-                    if not residues_b_mapped:
+                    residues_b = _pocket_residues_in_ref(other_model, other_pocket.get("residues", []))
+                    if not residues_b:
                         continue
-                    sim = jaccard_similarity(residues_a, residues_b_mapped)
+                    sim = jaccard_similarity(residues_a, residues_b)
                     if sim > best_jaccard:
                         best_jaccard = sim
                     if sim >= CONSENSUS_JACCARD_THRESHOLD:
