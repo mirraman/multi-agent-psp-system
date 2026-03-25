@@ -111,7 +111,7 @@ def extract_metrics(job):
 
     pocket_summary = pockets.get("pocket_summary") or {}
     high_conf_pockets = pocket_summary.get("high_confidence", "—")
-    total_pockets = pocket_summary.get("total", "—")
+    total_pockets = pocket_summary.get("total_detected", pocket_summary.get("total", "—"))
 
     pairwise_rmsd = analysis.get("pairwise_rmsd") or {}
     rmsd_str = "; ".join(f"{k}: {v}Å" for k, v in pairwise_rmsd.items()) if pairwise_rmsd else "—"
