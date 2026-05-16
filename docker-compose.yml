@@ -23,14 +23,14 @@ services:
     ports:
       - "55432:5432"
     environment:
-      POSTGRES_USER: psp
-      POSTGRES_PASSWORD: psp
-      POSTGRES_DB: psp_db
+      POSTGRES_USER: ${POSTGRES_USER:-psp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env - see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:-psp_db}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U psp -d psp_db"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -60,9 +60,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
-      - REDIS_URL=redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-psp}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env - see .env.example}@postgres:5432/${POSTGRES_DB:-psp_db}
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ./app:/app/app          # live reload for development
       - ./data:/app/data
@@ -83,21 +83,20 @@ services:
     container_name: psp-agents
     command: python -m app.AgentRunner
     environment:
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
-      - REDIS_URL=redis://redis:6379/0
-      - ENABLE_MODAL=1
-      - XMPP_DOMAIN=xmpp
-      - XMPP_PASSWORD=secret123
-      - XMPP_AUTO_REGISTER=1
-      - XMPP_USE_TLS=0
-      - XMPP_FORCE_STARTTLS=0
-      - XMPP_USE_SSL=0
-      - XMPP_ALLOW_UNENCRYPTED_PLAIN_AUTH=1
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-psp}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env - see .env.example}@postgres:5432/${POSTGRES_DB:-psp_db}
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_MODAL: "1"
+      XMPP_DOMAIN: xmpp
+      XMPP_PASSWORD: ${XMPP_PASSWORD:-change_me}
+      XMPP_AUTO_REGISTER: "1"
+      XMPP_USE_TLS: "0"
+      XMPP_FORCE_STARTTLS: "0"
+      XMPP_USE_SSL: "0"
+      XMPP_ALLOW_UNENCRYPTED_PLAIN_AUTH: "1"
       # Pass host Modal credentials into container when available.
-      # Set these in your shell (or a .env file) before docker compose up.
-      - MODAL_TOKEN_ID=${MODAL_TOKEN_ID}
-      - MODAL_TOKEN_SECRET=${MODAL_TOKEN_SECRET}
+      MODAL_TOKEN_ID: ${MODAL_TOKEN_ID:-}
+      MODAL_TOKEN_SECRET: ${MODAL_TOKEN_SECRET:-}
     volumes:
       - ./app:/app/app          # live reload for development
       - ./data:/app/data
@@ -119,8 +118,8 @@ services:
       target: celery
     container_name: psp-celery
     environment:
-      - DATABASE_URL=postgresql+asyncpg://psp:psp@postgres:5432/psp_db
-      - REDIS_URL=redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-psp}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env - see .env.example}@postgres:5432/${POSTGRES_DB:-psp_db}
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ./app:/app/app
     depends_on:

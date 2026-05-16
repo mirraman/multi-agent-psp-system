@@ -1,6 +1,5 @@
-from typing import Dict
-from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
-from app.agents.BaseAgent import BaseAgent
+from spade.behaviour import PeriodicBehaviour
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
 import modal
 import asyncio
 import concurrent.futures
@@ -15,7 +14,12 @@ class ModalAgent(BaseAgent):
 		self.modal_function_name = os.getenv("MODAL_FUNCTION_NAME", "predict_structure_remote")
 
 	async def setup(self):
-		self.add_behaviour(MessageHandlerBehaviour(self))
+		self.add_behaviour(
+			ActionMessageHandlerBehaviour(
+				self,
+				action_to_handler={"predict_colabfold_modal": "handle_predict"},
+			)
+		)
 		self.add_behaviour(CheckModalJobsBehaviour(period=5))
 		print(
 			f"ModalAgent {self.jid} started - Connected to Modal Cloud "
@@ -68,18 +72,6 @@ class ModalAgent(BaseAgent):
 				job_id=job_id,
 			)
 			await self.send(msg)
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
-
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "predict_colabfold_modal":
-				await self.agent.handle_predict(agent_msg)
 
 class CheckModalJobsBehaviour(PeriodicBehaviour):
 	async def run(self):

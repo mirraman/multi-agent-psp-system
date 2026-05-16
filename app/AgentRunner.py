@@ -11,7 +11,7 @@ from app.agents.AnalysisAgent import AnalysisAgent
 from app.agents.OutputAgent import OutputAgent
 from app.agents.ModalAgent import ModalAgent
 from app.agents.PocketAgent import PocketAgent
-from app.utils.db import DatabaseConnection
+from app.utils.db import DatabaseConnection, get_database_url
 
 AGENT_DOMAIN = os.getenv("XMPP_DOMAIN", "xmpp")
 PASSWORD = os.getenv("XMPP_PASSWORD", "secret123")
@@ -31,13 +31,14 @@ AGENTS = [
 
 
 async def main():
-    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://psp:psp@localhost:5432/psp_db")
+    database_url = get_database_url()
     try:
         await DatabaseConnection.init(database_url)
-        print(f"Connected to PostgreSQL: {database_url}")
+        print("Connected to PostgreSQL")
     except Exception as e:
         print(f"PostgreSQL connection failed: {e}")
-        print("Coordinator will not be able to poll for jobs from DB!")
+        print("Exiting: agents cannot poll the job queue without PostgreSQL.")
+        raise SystemExit(1) from e
 
     agents = []
     

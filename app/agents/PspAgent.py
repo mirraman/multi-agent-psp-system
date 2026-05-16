@@ -1,6 +1,5 @@
-from typing import Any, Dict
-from app.agents.BaseAgent import BaseAgent
-from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
+from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent
+from spade.behaviour import PeriodicBehaviour
 from celery.result import AsyncResult
 from app.tasks import predict_esmfold
 
@@ -12,7 +11,10 @@ class PspAgent(BaseAgent):
 		self.pending_tasks = {}  
 
 	async def setup(self):
-		msg_handler = MessageHandlerBehaviour(self)
+		msg_handler = ActionMessageHandlerBehaviour(
+			self,
+			action_to_handler={"predict_structure": "handle_predict_structure"},
+		)
 		self.add_behaviour(msg_handler)
 		
 		task_checker = CheckCeleryTasksBehaviour(period=2)
@@ -30,19 +32,6 @@ class PspAgent(BaseAgent):
 		self.pending_tasks[job_id] = task_esm.id
 		
 		print(f"[{job_id}] Launched ESMFold task: {task_esm.id}")
-
-
-class MessageHandlerBehaviour(CyclicBehaviour):
-	def __init__(self, agent):
-		super().__init__()
-		self.agent = agent
-
-	async def run(self):
-		msg = await self.receive(timeout=10)
-		if msg:
-			agent_msg = self.agent.parse_message(msg)
-			if agent_msg.action == "predict_structure":
-				await self.agent.handle_predict_structure(agent_msg)
 
 
 class CheckCeleryTasksBehaviour(PeriodicBehaviour):

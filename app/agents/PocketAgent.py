@@ -2,8 +2,8 @@
 PocketAgent.py
 --------------
 Runs fpocket on one or more predicted structures, filters pockets by local
-pLDDT confidence, computes an ensemble-aware composite druggability score, and
-returns ranked pocket data to the CoordinatorAgent.
+pLDDT confidence, computes an ensemble-aware composite druggability score using
+REAL STRUCTURAL ALIGNMENT (TM-align), and returns ranked pocket data.
 
 Pipeline position:
     SynthesisAgent → CoordinatorAgent → PocketAgent → CoordinatorAgent → OutputAgent
@@ -11,23 +11,6 @@ Pipeline position:
 Message actions:
     Receives:  "detect_pockets"
     Sends:     "pockets_detected"
-
-Payload received:
-    {
-        "models": {                    # model name -> PDB string
-            "esmfold": str,
-            "colabfold_modal": str
-        },
-        "best_model": str,
-        "plddt_per_residue": dict,     # str(res_num) -> float (0-100)
-        "best_model_source": str       # for logging
-    }
-
-Payload sent:
-    {
-        "pockets": [...],              # see PocketData schema below
-        "pocket_summary": {...}
-    }
 """
 
 import logging
@@ -37,12 +20,13 @@ from spade.behaviour import CyclicBehaviour
 
 from app.agents.BaseAgent import BaseAgent
 from app.utils.fpocket_runner import run_fpocket
+from app.utils.structure_alignment import align_structures, invert_residue_mapping
 
 logger = logging.getLogger("psp.pocket_agent")
 
 # Minimum local pLDDT (mean over pocket residues) to consider a pocket reliable
 PLDDT_CONFIDENCE_THRESHOLD = 70.0
-CONSENSUS_JACCARD_THRESHOLD = 0.5
+CONSENSUS_JACCARD_THRESHOLD = 0.5   # after structural alignment
 
 
 class PocketAgent(BaseAgent):
@@ -59,11 +43,10 @@ class PocketAgent(BaseAgent):
         payload = agent_msg.payload
 
         models_payload: Dict[str, str] = payload.get("models", {}) or {}
-        # Backward compatibility with older payload shape.
+        # Backward compatibility
         if not models_payload and payload.get("pdb_text"):
             models_payload = {"best_model": payload.get("pdb_text", "")}
 
-        # plddt_per_residue keys are strings (JSON-safe); convert to int for lookup
         raw_plddt: dict = payload.get("plddt_per_residue", {})
         plddt_per_residue: Dict[int, float] = {
             int(k): float(v) for k, v in raw_plddt.items()
@@ -90,12 +73,7 @@ class PocketAgent(BaseAgent):
 
                 if not fpocket_result["success"]:
                     model_errors[model_name] = fpocket_result.get("error", "fpocket error")
-                    logger.error(
-                        "[%s] fpocket failed for %s: %s",
-                        job_id,
-                        model_name,
-                        model_errors[model_name],
-                    )
+                    logger.error("[%s] fpocket failed for %s: %s", job_id, model_name, model_errors[model_name])
                     continue
 
                 pockets_by_model[model_name] = fpocket_result["pockets"]
@@ -109,6 +87,7 @@ class PocketAgent(BaseAgent):
                 result_payload = _process_pockets(
                     pockets_by_model,
                     plddt_per_residue,
+                    models_payload,          # ← NEW: needed for TM-align
                     job_id,
                     best_model=best_model,
                     fallback_plddt_mean=fallback_plddt,
@@ -135,19 +114,13 @@ class PocketAgent(BaseAgent):
 def _process_pockets(
     pockets_by_model: Dict[str, List[Dict[str, Any]]],
     plddt_per_residue: Dict[int, float],
+    models_payload: Dict[str, str],          # ← NEW: full PDB texts for alignment
     job_id: str,
     best_model: str = "esmfold",
     fallback_plddt_mean: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Enrich raw fpocket output with pLDDT filtering and composite scoring.
-
-    Each enriched pocket gets:
-        local_plddt_mean    — mean pLDDT of pocket-lining residues
-        confident           — bool: True if local_plddt_mean >= PLDDT_CONFIDENCE_THRESHOLD
-        ensemble_agreement  — cross-model overlap metadata
-        composite_score     — druggability × (pLDDT / 100) × (1 + 0.3 × jaccard_bonus)
-        filter_reason       — None or "low_plddt_confidence"
+    Enrich raw fpocket output with pLDDT filtering + REAL STRUCTURAL ALIGNMENT (TM-align).
     """
     enriched: List[Dict[str, Any]] = []
     filtered_count = 0
@@ -155,32 +128,16 @@ def _process_pockets(
 
     per_model_enriched: Dict[str, List[Dict[str, Any]]] = {}
 
+    # === STEP 1: Run fpocket on every model (unchanged) ===
     for model_name, model_pockets in pockets_by_model.items():
         model_enriched: List[Dict[str, Any]] = []
         for pocket in model_pockets:
             residues: List[int] = pocket.get("residues", [])
-
-            # Compute local pLDDT over pocket residues
-            plddt_values = [
-                plddt_per_residue[r] for r in residues if r in plddt_per_residue
-            ]
-            if plddt_values:
-                local_plddt = sum(plddt_values) / len(plddt_values)
-            else:
-                # Experimental structures: B-factors may not match prediction numbering; use fallback mean.
-                if fallback_plddt_mean is not None:
-                    local_plddt = float(fallback_plddt_mean)
-                elif best_model in ("experimental",) and model_name == "experimental":
-                    local_plddt = 85.0
-                else:
-                    local_plddt = 0.0
-                    logger.debug(
-                        "[%s] %s pocket %d: no pLDDT data for residues %s",
-                        job_id,
-                        model_name,
-                        pocket["pocket_id"],
-                        residues[:5],
-                    )
+            plddt_values = [plddt_per_residue[r] for r in residues if r in plddt_per_residue]
+            local_plddt = sum(plddt_values) / len(plddt_values) if plddt_values else (
+                fallback_plddt_mean if fallback_plddt_mean is not None else
+                85.0 if model_name == "experimental" else 0.0
+            )
 
             confident = local_plddt >= PLDDT_CONFIDENCE_THRESHOLD
             druggability = pocket.get("druggability_score", 0.0)
@@ -188,7 +145,7 @@ def _process_pockets(
             enriched_pocket = {
                 "model_name": model_name,
                 "pocket_id": pocket["pocket_id"],
-                "rank": pocket["pocket_id"],  # will re-rank globally below
+                "rank": pocket["pocket_id"],
                 "residues": residues,
                 "volume": pocket.get("volume", 0.0),
                 "druggability_score": round(druggability, 4),
@@ -196,11 +153,7 @@ def _process_pockets(
                 "alpha_sphere_count": pocket.get("alpha_sphere_count", 0),
                 "local_plddt_mean": round(local_plddt, 2),
                 "confident": confident,
-                "ensemble_agreement": {
-                    "seen_in_models": [model_name],
-                    "jaccard_similarity": 0.0,
-                    "consensus": False,
-                },
+                "ensemble_agreement": {"seen_in_models": [model_name], "jaccard_similarity": 0.0, "tm_score_ref": 0.0, "consensus": False},
                 "composite_score": 0.0,
                 "filter_reason": None if confident else "low_plddt_confidence",
             }
@@ -209,50 +162,78 @@ def _process_pockets(
                 filtered_count += 1
         per_model_enriched[model_name] = model_enriched
 
-    # Cross-model pocket overlap (Jaccard over residue sets).
-    model_names = list(per_model_enriched.keys())
-    for model_name in model_names:
-        for pocket in per_model_enriched[model_name]:
-            residues_a: Set[int] = set(pocket.get("residues", []))
+    # === STEP 2: STRUCTURAL ALIGNMENT (NEW) ===
+    ref_name = best_model if best_model in pockets_by_model else list(pockets_by_model.keys())[0]
+    ref_pdb_text = models_payload.get(ref_name, "")
+
+    alignments: Dict[str, Dict] = {ref_name: {"residue_mapping": {r: r for r in range(9999)}}}
+    for model_name in list(pockets_by_model.keys()):
+        if model_name == ref_name:
+            continue
+        pdb_text = models_payload.get(model_name, "")
+        if pdb_text:
+            try:
+                alignments[model_name] = align_structures(ref_pdb_text, pdb_text, ref_name, model_name)
+            except Exception as e:
+                logger.warning("[%s] Alignment failed for %s → %s: %s", job_id, ref_name, model_name, e)
+                alignments[model_name] = {"residue_mapping": {}, "tm_score": 0.0}
+
+    # mobile (model) residue numbers → reference numbering (align_structures maps ref → mobile)
+    mobile_to_ref: Dict[str, Dict[int, int]] = {
+        mn: invert_residue_mapping(alignments[mn]["residue_mapping"]) for mn in alignments
+    }
+
+    def _pocket_residues_in_ref(mn: str, residues: List[int]) -> Set[int]:
+        if mn == ref_name:
+            return set(residues)
+        inv = mobile_to_ref[mn]
+        return {inv[r] for r in residues if r in inv}
+
+    # === STEP 3: Cross-model consensus in reference residue space ===
+    for model_name, model_pockets in per_model_enriched.items():
+        for pocket in model_pockets:
+            residues_a = _pocket_residues_in_ref(model_name, pocket.get("residues", []))
             seen_in_models = {model_name}
             best_jaccard = 0.0
 
-            for other_model in model_names:
+            for other_model in alignments:
                 if other_model == model_name:
                     continue
-                overlaps_in_model = []
+
                 for other_pocket in per_model_enriched[other_model]:
-                    residues_b: Set[int] = set(other_pocket.get("residues", []))
+                    residues_b = _pocket_residues_in_ref(other_model, other_pocket.get("residues", []))
+                    if not residues_b:
+                        continue
                     sim = jaccard_similarity(residues_a, residues_b)
-                    overlaps_in_model.append(sim)
-                if overlaps_in_model:
-                    max_sim = max(overlaps_in_model)
-                    best_jaccard = max(best_jaccard, max_sim)
-                    if max_sim >= CONSENSUS_JACCARD_THRESHOLD:
+                    if sim > best_jaccard:
+                        best_jaccard = sim
+                    if sim >= CONSENSUS_JACCARD_THRESHOLD:
                         seen_in_models.add(other_model)
+                        break
 
             is_consensus = len(seen_in_models) > 1
             if is_consensus:
                 consensus_residue_sets.add(frozenset(residues_a))
+
+            tm_score = alignments.get(list(seen_in_models)[-1], {}).get("tm_score", 0.0)
+
             pocket["ensemble_agreement"] = {
                 "seen_in_models": sorted(seen_in_models),
                 "jaccard_similarity": round(best_jaccard, 4),
+                "tm_score_ref": round(tm_score, 3),
                 "consensus": is_consensus,
             }
 
+            # Stronger bonus for real structural agreement
             druggability = float(pocket.get("druggability_score", 0.0))
             local_plddt = float(pocket.get("local_plddt_mean", 0.0))
-            if local_plddt <= 0.0 and fallback_plddt_mean is not None:
+            if local_plddt <= 0 and fallback_plddt_mean is not None:
                 local_plddt = float(fallback_plddt_mean)
-                pocket["local_plddt_mean"] = round(local_plddt, 2)
-            jaccard_bonus = best_jaccard
-            composite = druggability * (local_plddt / 100.0) * (1 + 0.3 * jaccard_bonus)
+            composite = druggability * (local_plddt / 100.0) * (1 + 0.5 * best_jaccard)
             pocket["composite_score"] = round(composite, 4)
 
-    for pockets in per_model_enriched.values():
-        enriched.extend(pockets)
-
-    # Sort by composite score descending, re-assign rank
+    # Global re-ranking
+    enriched.extend([p for pockets in per_model_enriched.values() for p in pockets])
     enriched.sort(key=lambda p: p["composite_score"], reverse=True)
     for i, p in enumerate(enriched, start=1):
         p["rank"] = i

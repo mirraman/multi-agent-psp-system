@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 from spade.agent import Agent
 from spade.message import Message
-from spade.behaviour import OneShotBehaviour
+from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 
 
 @dataclass
@@ -36,6 +36,38 @@ class SendBehaviour(OneShotBehaviour):
 
 	async def run(self):
 		await self.send(self.msg)
+
+
+class ActionMessageHandlerBehaviour(CyclicBehaviour):
+	"""Generic message dispatcher for agents keyed by AgentMessage.action."""
+
+	def __init__(
+		self,
+		owner: "BaseAgent",
+		action_to_handler: Dict[str, str],
+		default_handler: str = "",
+		timeout: int = 10,
+	):
+		super().__init__()
+		self.owner = owner
+		self.action_to_handler = action_to_handler
+		self.default_handler = default_handler
+		self.timeout = timeout
+
+	async def run(self):
+		msg = await self.receive(timeout=self.timeout)
+		if not msg:
+			return
+
+		agent_msg = self.owner.parse_message(msg)
+		handler_name = self.action_to_handler.get(agent_msg.action, self.default_handler)
+		if not handler_name:
+			return
+
+		handler = getattr(self.owner, handler_name, None)
+		if handler is None:
+			return
+		await handler(agent_msg)
 
 
 class BaseAgent(Agent):

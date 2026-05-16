@@ -1,9 +1,23 @@
 """Unit tests for PocketAgent pocket processing (composite score, consensus count)."""
 
+from unittest.mock import patch
+
 from app.agents.PocketAgent import _process_pockets
 
 
-def test_process_pockets_composite_and_consensus_dedup():
+def _fake_align(_ref, _mob, _n1, _n2):
+    return {
+        "tm_score": 0.95,
+        "rmsd": 0.5,
+        "aligned_length": 100,
+        "residue_mapping": {10: 10, 11: 11, 12: 12},
+        "rotation": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        "translation": [0.0, 0.0, 0.0],
+    }
+
+
+@patch("app.agents.PocketAgent.align_structures", side_effect=_fake_align)
+def test_process_pockets_composite_and_consensus_dedup(_mock_align):
     pockets_by_model = {
         "esmfold": [
             {
@@ -30,6 +44,7 @@ def test_process_pockets_composite_and_consensus_dedup():
     out = _process_pockets(
         pockets_by_model,
         plddt,
+        {"esmfold": "ATOM", "alphafold_db": "ATOM"},
         "test-job",
         best_model="esmfold",
         fallback_plddt_mean=None,
@@ -37,6 +52,56 @@ def test_process_pockets_composite_and_consensus_dedup():
     assert out["pocket_summary"]["consensus_pockets"] == 1  # one unique residue set with cross-model overlap
     pockets = sorted(out["pockets"], key=lambda p: p["model_name"])
     assert all(p["composite_score"] > 0 for p in pockets)
+
+
+@patch(
+    "app.agents.PocketAgent.align_structures",
+    return_value={
+        "tm_score": 0.95,
+        "rmsd": 0.5,
+        "aligned_length": 100,
+        "residue_mapping": {10: 200, 11: 201, 12: 202},
+        "rotation": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        "translation": [0.0, 0.0, 0.0],
+    },
+)
+def test_consensus_maps_mobile_pocket_to_ref(_mock_align):
+    """Mobile structure uses different residue numbers; overlap is detected in ref space."""
+    pockets_by_model = {
+        "esmfold": [
+            {
+                "pocket_id": 1,
+                "residues": [10, 11, 12],
+                "druggability_score": 0.8,
+                "volume": 100.0,
+                "hydrophobicity": 0.1,
+                "alpha_sphere_count": 5,
+            },
+        ],
+        "alphafold_db": [
+            {
+                "pocket_id": 1,
+                "residues": [200, 201, 202],
+                "druggability_score": 0.8,
+                "volume": 100.0,
+                "hydrophobicity": 0.1,
+                "alpha_sphere_count": 5,
+            },
+        ],
+    }
+    plddt = {10: 80.0, 11: 80.0, 12: 80.0, 200: 80.0, 201: 80.0, 202: 80.0}
+    out = _process_pockets(
+        pockets_by_model,
+        plddt,
+        {"esmfold": "ATOM", "alphafold_db": "ATOM"},
+        "test-job",
+        best_model="esmfold",
+        fallback_plddt_mean=None,
+    )
+    assert out["pocket_summary"]["consensus_pockets"] == 1
+    for p in out["pockets"]:
+        assert p["ensemble_agreement"]["consensus"] is True
+        assert p["ensemble_agreement"]["jaccard_similarity"] == 1.0
 
 
 def test_fallback_plddt_restores_composite():
@@ -55,6 +120,7 @@ def test_fallback_plddt_restores_composite():
     out = _process_pockets(
         pockets_by_model,
         {},
+        {"experimental": "ATOM"},
         "test-job",
         best_model="experimental",
         fallback_plddt_mean=75.0,
