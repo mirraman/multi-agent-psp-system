@@ -3,9 +3,12 @@ import uuid
 from datetime import datetime, timezone
 from app.agents.BaseAgent import ActionMessageHandlerBehaviour, BaseAgent, AgentMessage
 from spade.behaviour import PeriodicBehaviour
+import json
+
 from app.utils.db import (
     DatabaseConnection,
     upsert_protein_result,
+    upsert_riboswitch_result,
     claim_pending_job,
     complete_task,
     fail_task,
@@ -28,6 +31,7 @@ class CoordinatorAgent(BaseAgent):
         self.output_agent_jid = self.format_jid("output_agent")
         self.analysis_agent_jid = self.format_jid("analysis_agent")
         self.modal_agent_jid = self.format_jid("modal_agent")
+        self.riboswitch_agent_jid = self.format_jid("riboswitch_agent")
 
     async def _log(self, job: dict, message: str, level: str = "info"):
         """Write a log entry for a job (to DB and stdout)."""
@@ -56,13 +60,27 @@ class CoordinatorAgent(BaseAgent):
 
         await self._log(self.jobs[job_id], f"Job started — input_type={input_type}, value={input_value[:60]}")
 
-        msg = self.create_message(
-            to=self.data_agent_jid,
-            msg_type="request",
-            action="fetch_data",
-            payload={"input_type": input_type, "input_value": input_value},
-            job_id=job_id,
-        )
+        if input_type == "riboswitch":
+            self.jobs[job_id]["status"] = "designing_riboswitch"
+            try:
+                ga_params = json.loads(input_value)
+            except Exception:
+                ga_params = {}
+            msg = self.create_message(
+                to=self.riboswitch_agent_jid,
+                msg_type="request",
+                action="design_riboswitch",
+                payload=ga_params,
+                job_id=job_id,
+            )
+        else:
+            msg = self.create_message(
+                to=self.data_agent_jid,
+                msg_type="request",
+                action="fetch_data",
+                payload={"input_type": input_type, "input_value": input_value},
+                job_id=job_id,
+            )
         await self.send(msg)
         return job_id
 
@@ -421,6 +439,23 @@ class CoordinatorAgent(BaseAgent):
                     print(f"Saved final results to DB for {job['input_value']}")
                 except Exception as e:
                     print(f"Failed to save protein result: {e}")
+
+        elif action == "riboswitch_designed":
+            job["status"] = "completed"
+            result = agent_msg.payload
+            await self._log(job, "Riboswitch design complete.")
+
+            db_job_id = job.get("db_job_id")
+            if DatabaseConnection.engine is not None and db_job_id:
+                try:
+                    await complete_task(db_job_id)
+                except Exception as e:
+                    print(f"Failed to mark task complete: {e}")
+                try:
+                    await upsert_riboswitch_result(int(db_job_id), result)
+                    print(f"Saved riboswitch result to DB for job {db_job_id}")
+                except Exception as e:
+                    print(f"Failed to save riboswitch result: {e}")
 
         elif action == "error":
             error_msg = agent_msg.payload.get("error", "Unknown error")
