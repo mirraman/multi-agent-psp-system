@@ -11,6 +11,7 @@ from app.agents.AnalysisAgent import AnalysisAgent
 from app.agents.OutputAgent import OutputAgent
 from app.agents.ModalAgent import ModalAgent
 from app.agents.PocketAgent import PocketAgent
+from app.agents.RiboSwitchAgent import RiboSwitchAgent
 from app.utils.db import DatabaseConnection, get_database_url
 
 AGENT_DOMAIN = os.getenv("XMPP_DOMAIN", "xmpp")
@@ -27,6 +28,7 @@ AGENTS = [
     (f"pocket_agent@{AGENT_DOMAIN}", PocketAgent),
     (f"output_agent@{AGENT_DOMAIN}", OutputAgent),
     (f"modal_agent@{AGENT_DOMAIN}", ModalAgent),
+    (f"riboswitch_agent@{AGENT_DOMAIN}", RiboSwitchAgent),
 ]
 
 

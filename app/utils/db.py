@@ -96,6 +96,16 @@ CREATE TABLE IF NOT EXISTS processed (
     accession TEXT UNIQUE NOT NULL,
     processed JSONB NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS riboswitch_results (
+    id        SERIAL PRIMARY KEY,
+    task_id   INTEGER UNIQUE NOT NULL REFERENCES tasks(id),
+    status    TEXT NOT NULL DEFAULT 'completed',
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    result    JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_riboswitch_results_task_id ON riboswitch_results(task_id);
 """
 
 
@@ -574,7 +584,11 @@ async def get_protein_result(accession: str) -> Optional[Dict[str, Any]]:
 
 
 async def get_result_by_task_id(task_id: Any) -> Optional[Dict[str, Any]]:
-    """Return the completed result record for a task_id, or None."""
+    """Return the completed result record for a task_id, or None.
+
+    Checks protein_results first; falls back to riboswitch_results so that
+    GET /jobs/{id}/result works for both job types without a new endpoint.
+    """
     _require_db()
     async with DatabaseConnection.get_session() as session:
         result = await session.execute(
@@ -585,6 +599,52 @@ async def get_result_by_task_id(task_id: Any) -> Optional[Dict[str, Any]]:
                        psp_results, models_used, psp_errors, analysis, pockets,
                        timestamp
                 FROM protein_results
+                WHERE task_id = :task_id
+                """
+            ),
+            {"task_id": int(task_id)},
+        )
+        row = result.mappings().fetchone()
+        if row is not None:
+            return dict(row)
+
+    return await get_riboswitch_result_by_task_id(task_id)
+
+
+async def upsert_riboswitch_result(task_id: Any, result_doc: Dict[str, Any]) -> None:
+    """Insert or update the final result for a completed riboswitch design job."""
+    _require_db()
+    import json
+
+    async with DatabaseConnection.get_session() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO riboswitch_results (task_id, status, timestamp, result)
+                VALUES (:task_id, 'completed', NOW(), CAST(:result AS JSONB))
+                ON CONFLICT (task_id) DO UPDATE SET
+                    status    = 'completed',
+                    timestamp = NOW(),
+                    result    = EXCLUDED.result
+                """
+            ),
+            {
+                "task_id": int(task_id),
+                "result": json.dumps(result_doc),
+            },
+        )
+        await session.commit()
+
+
+async def get_riboswitch_result_by_task_id(task_id: Any) -> Optional[Dict[str, Any]]:
+    """Return the riboswitch result record for a task_id, or None."""
+    _require_db()
+    async with DatabaseConnection.get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT task_id, status, timestamp, result
+                FROM riboswitch_results
                 WHERE task_id = :task_id
                 """
             ),

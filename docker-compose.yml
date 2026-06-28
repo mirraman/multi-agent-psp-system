@@ -120,11 +120,21 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-psp}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env - see .env.example}@postgres:5432/${POSTGRES_DB:-psp_db}
       REDIS_URL: redis://redis:6379/0
+      RIBOSWITCH_SERVICE_URL: http://riboswitch-service:8001
     volumes:
       - ./app:/app/app
     depends_on:
       redis:
         condition: service_healthy
+      riboswitch-service:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - psp-network
+
+  riboswitch-service:
+    image: riboswitch-service:latest
+    container_name: psp-riboswitch
     restart: unless-stopped
     networks:
       - psp-network
