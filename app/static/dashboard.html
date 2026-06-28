@@ -468,6 +468,14 @@
       display: block;
     }
 
+    .viz-iframe {
+      width: 100%;
+      height: 640px;
+      border: none;
+      border-radius: 8px;
+      display: block;
+    }
+
     .viz-spinner {
       text-align: center;
       color: var(--text-muted);
@@ -745,6 +753,15 @@
   // ── Job submission & tracking ──────────────────────────────────────────────
 
   let pollInterval = null;
+  let currentJobType = 'protein';
+
+  function resetVizPanel() {
+    const vizPanel = document.getElementById('tracker-viz');
+    const vizContent = document.getElementById('viz-content');
+    vizPanel.classList.remove('visible');
+    vizContent.innerHTML = '';
+    vizPanel.querySelector('.viz-label').textContent = 'Structure Visualisations';
+  }
 
   function switchTab(name) {
     document.querySelectorAll('.tab-btn').forEach((b, i) => {
@@ -754,8 +771,9 @@
     document.getElementById('tab-riboswitch').classList.toggle('active', name === 'riboswitch');
   }
 
-  async function submitJob(body, btn) {
+  async function submitJob(body, jobType, btn) {
     btn.disabled = true;
+    currentJobType = jobType;
     try {
       const resp = await fetch('/jobs', {
         method: 'POST',
@@ -781,7 +799,7 @@
     const body = raw.startsWith('>') || /^[ACDEFGHIKLMNPQRSTVWY]{10,}$/i.test(raw.replace(/\s/g,''))
       ? { sequence: raw }
       : { accession: raw };
-    submitJob(body, btn);
+    submitJob(body, 'protein', btn);
   }
 
   function submitRiboswitch(btn) {
@@ -798,7 +816,7 @@
     };
     const seed = document.getElementById('ribo-seed').value.trim();
     if (seed) body.seed = parseInt(seed);
-    submitJob(body, btn);
+    submitJob(body, 'riboswitch', btn);
   }
 
   function startTracking(jobId) {
@@ -817,12 +835,12 @@
     logsEl.innerHTML      = '';
     resultEl.classList.remove('visible');
     resultEl.textContent  = '';
+    resetVizPanel();
 
     let lastLogCount = 0;
 
     async function poll() {
       try {
-        // Status
         const jobResp = await fetch(`/jobs/${jobId}`);
         if (!jobResp.ok) return;
         const job = await jobResp.json();
@@ -830,7 +848,6 @@
         badgeEl.textContent = status.replace(/_/g, ' ');
         badgeEl.className   = 'status-badge ' + status;
 
-        // Logs
         const logResp = await fetch(`/jobs/${jobId}/logs`);
         if (logResp.ok) {
           const logData = await logResp.json();
@@ -848,7 +865,6 @@
           }
         }
 
-        // Done
         if (status === 'completed' || status === 'failed') {
           clearInterval(pollInterval);
           pollInterval = null;
@@ -859,12 +875,13 @@
                 const result = await resResp.json();
                 resultEl.textContent = JSON.stringify(result, null, 2);
                 resultEl.classList.add('visible');
-                // Auto-visualise riboswitch results.
-                // Riboswitch results are stored nested under result.result in the DB;
-                // unwrap so fetchViz gets {structure_on, structure_off, candidates, ...}.
-                const designData = result.result || result;
-                if (designData.structure_on && designData.structure_off) {
-                  fetchViz(designData);
+                if (currentJobType === 'riboswitch') {
+                  const designData = result.result || result;
+                  if (designData.structure_on && designData.structure_off) {
+                    fetchViz(designData);
+                  }
+                } else {
+                  renderProteinViz(result);
                 }
               }
             } catch (_) {}
@@ -878,6 +895,19 @@
 
     poll();
     pollInterval = setInterval(poll, 2000);
+  }
+
+  function renderProteinViz(result) {
+    const vizPanel   = document.getElementById('tracker-viz');
+    const vizContent = document.getElementById('viz-content');
+    const vizLabel   = vizPanel.querySelector('.viz-label');
+
+    vizPanel.classList.add('visible');
+    vizLabel.textContent = '3D Structure & Pockets';
+
+    // job_id is captured in the startTracking closure via the jobId variable
+    const jid = document.getElementById('tracker-job-id').textContent.replace('#', '');
+    vizContent.innerHTML = `<iframe class="viz-iframe" src="/jobs/${jid}/viewer"></iframe>`;
   }
 
   async function fetchViz(result) {

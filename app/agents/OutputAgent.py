@@ -10,498 +10,137 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{ACCESSION} — {PROTEIN_NAME} Structure Report</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<title>{ACCESSION} — {PROTEIN_NAME}</title>
 <script src="https://3dmol.org/build/3Dmol-min.js"></script>
 <style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --bg: #050810;
   --surface: #0d1117;
-  --surface2: #161b27;
   --border: rgba(255,255,255,0.07);
   --text: #e2e8f0;
   --muted: #64748b;
   --accent: #f97316;
-  --accent2: #22d3ee;
   --green: #4ade80;
-  --red: #fb7185;
-  --mono: 'Space Mono', monospace;
-  --sans: 'DM Sans', sans-serif;
+  --mono: 'SF Mono', 'Fira Code', monospace;
 }
-
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.6;
-  min-height: 100vh;
+  font-family: -apple-system, sans-serif;
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-
-/* HEADER */
 .header {
-  padding: 2rem 2.5rem 1.5rem;
+  padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 2rem;
-}
-.header-left { flex: 1; }
-.accession {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--accent);
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  margin-bottom: 0.3rem;
-}
-.protein-name {
-  font-size: 1.8rem;
-  font-weight: 600;
-  color: #fff;
-  letter-spacing: -0.02em;
-  margin-bottom: 0.2rem;
-}
-.protein-sub {
-  font-size: 0.85rem;
-  color: var(--muted);
-  font-family: var(--mono);
-}
-.header-badges {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
   align-items: center;
-  padding-top: 0.3rem;
-}
-.badge {
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  padding: 0.3rem 0.7rem;
-  border-radius: 3px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-.badge-model { background: rgba(249,115,22,0.15); color: var(--accent); border: 1px solid rgba(249,115,22,0.3); }
-.badge-consensus { background: rgba(74,222,128,0.12); color: var(--green); border: 1px solid rgba(74,222,128,0.25); }
-.badge-pockets { background: rgba(34,211,238,0.12); color: var(--accent2); border: 1px solid rgba(34,211,238,0.25); }
-
-/* STATS BAR */
-.stats-bar {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  border-bottom: 1px solid var(--border);
-}
-.stat {
-  padding: 1.2rem 1.5rem;
-  border-right: 1px solid var(--border);
-  position: relative;
-}
-.stat:last-child { border-right: none; }
-.stat-label {
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  color: var(--muted);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin-bottom: 0.4rem;
-}
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 600;
-  font-family: var(--mono);
-  color: #fff;
-  letter-spacing: -0.02em;
-}
-.stat-value.orange { color: var(--accent); }
-.stat-value.cyan { color: var(--accent2); }
-.stat-value.green { color: var(--green); }
-.stat-unit {
-  font-size: 0.7rem;
-  color: var(--muted);
-  margin-top: 0.1rem;
-  font-family: var(--mono);
-}
-
-/* MAIN LAYOUT */
-.main {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  height: calc(100vh - 200px);
-  min-height: 520px;
-}
-
-/* 3D VIEWER */
-.viewer-panel {
-  position: relative;
-  border-right: 1px solid var(--border);
-  background: #03050a;
-}
-#viewer {
-  width: 100%;
-  height: 100%;
-}
-.viewer-overlay {
-  position: absolute;
-  top: 1rem;
-  left: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  pointer-events: none;
-}
-.viewer-label {
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  color: rgba(255,255,255,0.4);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.pocket-legend {
-  position: absolute;
-  bottom: 1rem;
-  left: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  pointer-events: none;
-}
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  color: rgba(255,255,255,0.6);
-}
-.legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  gap: 1rem;
   flex-shrink: 0;
 }
-
-/* SIDEBAR */
+.protein-name { font-size: 0.95rem; font-weight: 600; color: #fff; }
+.accession { font-family: var(--mono); font-size: 0.65rem; color: var(--accent); letter-spacing: 0.1em; }
+.main {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  flex: 1;
+  overflow: hidden;
+}
+.viewer-panel { position: relative; background: #03050a; }
+#viewer { width: 100%; height: 100%; }
+.viewer-tag {
+  position: absolute; top: 0.6rem; left: 0.7rem;
+  font-family: var(--mono); font-size: 0.55rem;
+  color: rgba(255,255,255,0.3); letter-spacing: 0.08em; pointer-events: none;
+}
 .sidebar {
-  overflow-y: auto;
+  border-left: 1px solid var(--border);
   background: var(--surface);
+  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
-
-.section {
-  padding: 1.25rem 1.5rem;
+.sidebar-title {
+  font-family: var(--mono); font-size: 0.58rem; color: var(--muted);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 0.9rem 1rem 0.5rem;
   border-bottom: 1px solid var(--border);
 }
-.section-title {
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  color: var(--muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 0.9rem;
-}
-
-/* MODEL SELECTOR */
-.model-tabs {
-  display: flex;
-  gap: 0.4rem;
-  margin-bottom: 1rem;
-}
-.model-tab {
-  flex: 1;
-  padding: 0.4rem 0.5rem;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 0.58rem;
-  color: var(--muted);
-  transition: all 0.15s;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.model-tab.active {
-  background: rgba(249,115,22,0.12);
-  border-color: rgba(249,115,22,0.4);
-  color: var(--accent);
-}
-
-/* RMSD */
-.rmsd-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.8rem;
-}
-.rmsd-item:last-child { border-bottom: none; }
-.rmsd-label { color: var(--muted); font-family: var(--mono); font-size: 0.7rem; text-transform: lowercase; }
-.rmsd-val {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-.rmsd-bar {
-  height: 3px;
-  background: var(--surface2);
-  border-radius: 2px;
-  margin-top: 0.3rem;
-  overflow: hidden;
-}
-.rmsd-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.6s ease;
-}
-
-/* POCKET LIST */
 .pocket-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 0;
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.55rem 1rem;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   transition: background 0.1s;
-  border-radius: 4px;
-  padding-left: 0.4rem;
 }
-.pocket-item:last-child { border-bottom: none; }
 .pocket-item:hover { background: rgba(255,255,255,0.03); }
 .pocket-item.active { background: rgba(249,115,22,0.06); }
-.pocket-color {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
+.pocket-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .pocket-info { flex: 1; min-width: 0; }
-.pocket-title {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-.pocket-consensus-badge {
-  font-size: 0.55rem;
-  padding: 0.1rem 0.3rem;
-  border-radius: 2px;
-  background: rgba(74,222,128,0.15);
-  color: var(--green);
-  font-family: var(--mono);
-  letter-spacing: 0.05em;
-}
-.pocket-meta {
-  font-size: 0.65rem;
-  color: var(--muted);
-  margin-top: 0.15rem;
-  font-family: var(--mono);
-}
-.pocket-score {
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-/* CONSENSUS VISUAL */
-.consensus-visual {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-.model-pill {
-  flex: 1;
-  padding: 0.4rem;
-  border-radius: 4px;
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.model-pill.active-model {
-  background: rgba(249,115,22,0.15);
-  border: 1px solid rgba(249,115,22,0.3);
-  color: var(--accent);
-}
-.model-pill.compared {
-  background: rgba(34,211,238,0.08);
-  border: 1px solid rgba(34,211,238,0.2);
-  color: var(--accent2);
-}
-
-/* BOTTOM SECTION */
-.bottom-bar {
-  padding: 0.75rem 2.5rem;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--surface);
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  color: var(--muted);
-}
-.bottom-bar span { letter-spacing: 0.05em; }
+.pocket-label { font-family: var(--mono); font-size: 0.68rem; color: #fff; }
+.pocket-sub { font-size: 0.62rem; color: var(--muted); margin-top: 0.1rem; font-family: var(--mono); }
+.pocket-score { font-family: var(--mono); font-size: 0.75rem; font-weight: 700; color: var(--accent); }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <div class="header-left">
-    <div class="accession">UniProt · {ACCESSION}</div>
-    <div class="protein-name">{PROTEIN_NAME}</div>
-    <div class="protein-sub">{PROTEIN_SUB}</div>
-  </div>
-  <div class="header-badges">
-    <span class="badge badge-model">{BEST_MODEL} · {BEST_QUALITY_BADGE}</span>
-    <span class="badge badge-consensus">{CONSENSUS_POCKETS} consensus pockets</span>
-    <span class="badge badge-pockets">{MODELS_COUNT}-model ensemble</span>
-  </div>
-</div>
-
-<div class="stats-bar">
-  <div class="stat">
-    <div class="stat-label">Best Model</div>
-    <div class="stat-value orange" style="font-size:1rem;margin-top:4px;">{BEST_MODEL}</div>
-    <div class="stat-unit">{BEST_QUALITY_BADGE}</div>
-  </div>
-  <div class="stat">
-    <div class="stat-label">ESMFold pLDDT</div>
-    <div class="stat-value">{ESMFOLD_PLDDT}</div>
-    <div class="stat-unit">confidence</div>
-  </div>
-  <div class="stat">
-    <div class="stat-label">Avg RMSD</div>
-    <div class="stat-value cyan">{AVG_RMSD}</div>
-    <div class="stat-unit">Å across {MODELS_COUNT} models</div>
-  </div>
-  <div class="stat">
-    <div class="stat-label">Total Pockets</div>
-    <div class="stat-value">{TOTAL_POCKETS}</div>
-    <div class="stat-unit">{HIGH_CONF_POCKETS} high-confidence</div>
-  </div>
-  <div class="stat">
-    <div class="stat-label">Consensus Pockets</div>
-    <div class="stat-value green">{CONSENSUS_POCKETS}</div>
-    <div class="stat-unit">cross-model match</div>
-  </div>
-  <div class="stat">
-    <div class="stat-label">Top Druggability</div>
-    <div class="stat-value orange">{TOP_DRUGGABILITY}</div>
-    <div class="stat-unit">Jaccard {TOP_JACCARD}</div>
-  </div>
+  <div class="protein-name">{PROTEIN_NAME}</div>
+  <div class="accession">{ACCESSION}</div>
 </div>
 
 <div class="main">
   <div class="viewer-panel">
     <div id="viewer"></div>
-    <div class="viewer-overlay">
-      <div class="viewer-label">{BEST_MODEL} · {ACCESSION}</div>
-    </div>
-    <div class="pocket-legend" id="legend"></div>
+    <div class="viewer-tag">{BEST_MODEL} · {ACCESSION}</div>
   </div>
-
   <div class="sidebar">
-    <div class="section">
-      <div class="section-title">Ensemble Models</div>
-      <div class="consensus-visual">
-{MODELS_PILLS}
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Pairwise RMSD</div>
-{RMSD_ROWS}
-    </div>
-
-    <div class="section">
-      <div class="section-title">Top Binding Pockets</div>
-      <div id="pocket-list"></div>
-    </div>
+    <div class="sidebar-title">Binding Pockets</div>
+    <div id="pocket-list"></div>
   </div>
-</div>
-
-<div class="bottom-bar">
-  <span>Generated · {GENERATED_DATE}</span>
-  <span>PSP Pipeline · ESMFold + AlphaFold DB + Experimental · fpocket</span>
-  <span>{PDB_COUNT} experimental PDB structures</span>
 </div>
 
 <script>
 const pocketData = {POCKET_DATA_JSON};
 
-// Build pocket list
 const list = document.getElementById('pocket-list');
-const legend = document.getElementById('legend');
 pocketData.forEach((p, i) => {
   const item = document.createElement('div');
   item.className = 'pocket-item';
-  item.id = 'pk-' + i;
   item.innerHTML = `
-    <div class="pocket-color" style="background:${p.color}"></div>
+    <div class="pocket-dot" style="background:${p.color}"></div>
     <div class="pocket-info">
-      <div class="pocket-title">
-        Pocket #${p.rank} · ${p.model_name}
-        ${p.consensus ? '<span class="pocket-consensus-badge">✓ CONSENSUS</span>' : ''}
-      </div>
-      <div class="pocket-meta">Vol ${p.volume.toFixed(0)}Å³ · pLDDT ${p.plddt.toFixed(1)} · Jaccard ${p.jaccard.toFixed(2)}</div>
+      <div class="pocket-label">#${p.rank} · ${p.model_name}</div>
+      <div class="pocket-sub">Vol ${p.volume.toFixed(0)} Å³ · Drug ${parseFloat(p.druggability).toFixed(2)}</div>
     </div>
     <div class="pocket-score">${parseFloat(p.composite).toFixed(3)}</div>
   `;
   list.appendChild(item);
-
-  // legend
-  if (i < 5) {
-    const li = document.createElement('div');
-    li.className = 'legend-item';
-    li.innerHTML = `<div class="legend-dot" style="background:${p.color}"></div><span>#${p.rank} · ${parseFloat(p.druggability).toFixed(3)}</span>`;
-    legend.appendChild(li);
-  }
 });
 
-// 3Dmol
 document.addEventListener('DOMContentLoaded', function() {
-  const el = document.getElementById('viewer');
-  const viewer = $3Dmol.createViewer(el, { backgroundColor: '#03050a' });
-
-  const pdbData = `{PDB_DATA}`;
-
-  viewer.addModel(pdbData, 'pdb');
+  const viewer = $3Dmol.createViewer(document.getElementById('viewer'), { backgroundColor: '#03050a' });
+  viewer.addModel(`{PDB_DATA}`, 'pdb');
   viewer.setStyle({}, { cartoon: { color: '#1e293b', opacity: 0.85 } });
-
-  pocketData.forEach((p, i) => {
-    viewer.addStyle(
-      { resi: p.residues },
-      { sphere: { color: p.color, radius: 0.55, opacity: 0.82 } }
-    );
+  pocketData.forEach(p => {
+    viewer.addStyle({ resi: p.residues }, { sphere: { color: p.color, radius: 0.55, opacity: 0.82 } });
   });
-
   viewer.zoomTo();
   viewer.render();
 
-  // Click to highlight
   document.querySelectorAll('.pocket-item').forEach((el, i) => {
     el.addEventListener('click', () => {
       document.querySelectorAll('.pocket-item').forEach(e => e.classList.remove('active'));
       el.classList.add('active');
-      viewer.setStyle({}, { cartoon: { color: '#1e293b', opacity: 0.5 } });
+      viewer.setStyle({}, { cartoon: { color: '#1e293b', opacity: 0.4 } });
       pocketData.forEach((p, j) => {
         viewer.addStyle(
           { resi: p.residues },
-          { sphere: { color: j === i ? p.color : '#1e293b', radius: j === i ? 0.7 : 0.3, opacity: j === i ? 1.0 : 0.2 } }
+          { sphere: { color: p.color, radius: j === i ? 0.7 : 0.3, opacity: j === i ? 1.0 : 0.15 } }
         );
       });
       viewer.zoomTo({ resi: pocketData[i].residues });
